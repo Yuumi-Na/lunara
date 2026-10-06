@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-cream: #FAF8F5;
+    --color-cream-card: #FFFFFF;
+    --color-cream-border: #EAE3DC;
+    --color-cream-muted: #F5EFEB;
+    --color-dark-brown: #2D2420;
+    --color-brown-primary: #4E3C34;
+    --color-brown-hover: #382B24;
+    --color-brown-subtle: #7A584A;
+    --color-brown-muted: #8C7063;
+    --color-dusty-pink: #E0B8B2;
+    --color-dusty-pink-subtle: #E8D3CB;
+    --color-gold: #C79F5E;
+    --color-gold-deep: #D4AF37;
+  }
+
+  html {
+    /* ปรับขนาดฟอนต์เริ่มต้นให้ใหญ่ขึ้น สบายตา ไม่อึดอัด อ่านง่าย ผ่อนคลาย */
+    font-size: 19px;
+    scroll-behavior: smooth;
+  }
+
+  @media (min-width: 768px) {
+    html {
+      font-size: 20px;
+    }
+  }
+
+  body {
+    font-family: 'Prompt', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #FAF8F5;
+    color: #2D2420;
+    letter-spacing: 0.02em;
+    line-height: 1.8;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, .font-serif {
+    font-family: 'Cormorant Garamond', 'Prompt', Georgia, serif;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
+  }
+
+  .font-brand {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    letter-spacing: 0.25em;
+  }
+
+  p {
+    line-height: 1.8;
+  }
+}
+
+/* Custom scrollbar for minimal luxury aesthetics */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #FAF8F5;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8C7B8;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #BFA896;
+}
+
+/* Luxury Card Glow Effect */
+.luxury-card {
+  background: #FFFFFF;
+  border: 1px solid #EAE3DC;
+  box-shadow: 0 4px 20px -2px rgba(78, 60, 52, 0.05);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.luxury-card:hover {
+  border-color: rgba(199, 159, 94, 0.6);
+  box-shadow: 0 12px 30px -4px rgba(199, 159, 94, 0.15), 0 4px 12px rgba(78, 60, 52, 0.06);
+  transform: translateY(-2px);
+}
+
+/* Gold Gradient text helper */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #B58D38 0%, #D4AF37 50%, #8C6A28 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #C79F5E 0%, #D4AF37 100%);
+}
