@@ -50,8 +50,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialData, onSubmit,
     defaultValues: {
       name: initialData?.name ?? '',
       englishName: initialData?.englishName ?? '',
-      price: initialData?.price ?? 490,
-      originalPrice: initialData?.originalPrice,
+      // ช่วงลดทั้งร้าน: แก้ไขราคาปกติ ไม่ใช่ราคาลด
+      price: initialData?.regularPrice ?? initialData?.price ?? 490,
+      originalPrice: initialData?.sale ? initialData.regularOriginalPrice : initialData?.originalPrice,
       stone: initialData?.stone ?? '',
       colors: initialData?.colors ?? ['Pink'],
       intentions: initialData?.intentions ?? ['Love'],

@@ -18,6 +18,7 @@ import { useI18n } from '../i18n';
 import { useContent } from '../i18n/content';
 import { FREE_SHIPPING_THRESHOLD, type CartItem as CartItemType } from '../types';
 import { ProductImage } from './ProductCard';
+import { SaleChip, SalePrice } from './Promotions';
 import { Button, ConfirmDialog, IconButton, QuantityStepper, Sheet } from './ui';
 
 interface CartDrawerProps {
@@ -88,6 +89,7 @@ export const CartLine: React.FC<{ item: CartItemType; onViewProduct?: (id: strin
               {t('cart.size', { size: item.selectedSize })}
               {view.beadSize && <span className="hidden sm:inline"> · {view.beadSize}</span>}
             </p>
+            {item.product.sale && <SaleChip sale={item.product.sale} className="mt-1" />}
           </div>
           <IconButton
             label={t('cart.remove')}
@@ -105,7 +107,12 @@ export const CartLine: React.FC<{ item: CartItemType; onViewProduct?: (id: strin
             onChange={(delta) => updateQuantity(item.product.id, item.selectedSize, delta)}
             labels={{ decrease: t('qty.decrease'), increase: t('qty.increase') }}
           />
-          <span className="font-semibold text-ink tabular-nums">{price(item.product.price * item.quantity)}</span>
+          <SalePrice
+            size="sm"
+            price={item.product.price}
+            regularPrice={item.product.sale ? item.product.regularPrice : undefined}
+            quantity={item.quantity}
+          />
         </div>
       </div>
       <ConfirmDialog

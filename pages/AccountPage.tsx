@@ -15,6 +15,7 @@ import type { Order, OrderStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { fetchMyOrders } from '../services/api';
 import { Avatar } from '../components/HeaderControls';
+import { MemberBadge } from '../components/Promotions';
 import { ProductImage } from '../components/ProductCard';
 import { GoogleSignInButton } from '../components/LoginModal';
 import { Badge, Button, Container, cx, EmptyState, Skeleton, Spinner, ToggleChip } from '../components/ui';
@@ -94,8 +95,12 @@ export const AccountPage: React.FC<AccountPageProps> = ({ onNavigate, onViewProd
             <div className="flex items-center gap-2">
               <h1 className="text-2xl text-ink truncate">{user.name}</h1>
               <Badge tone={isAdmin ? 'gold' : 'neutral'}>{isAdmin ? t('role.admin') : t('role.customer')}</Badge>
+              {!isAdmin && <MemberBadge tier={user.memberTier} />}
             </div>
             <p className="text-sm text-ink-3 truncate">{user.email}</p>
+            {!isAdmin && user.memberTier === 'new_member' && user.newMemberUntil && (
+              <p className="text-xs text-info mt-0.5">{t('member.newUntil', { date: date(user.newMemberUntil) })}</p>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -216,6 +221,16 @@ export const AccountPage: React.FC<AccountPageProps> = ({ onNavigate, onViewProd
                       {content.payment(order.paymentMethod)} ·{' '}
                       {order.shippingFee === 0 ? t('cart.free') : `${t('cart.shipping')} ${price(order.shippingFee)}`}
                     </span>
+                    {(order.autoPromotions ?? []).map((p) => (
+                      <span key={p.id} className="text-danger">
+                        {p.name} −{price(p.discount)}
+                      </span>
+                    ))}
+                    {!!order.discount && order.promotion && (
+                      <span className="text-success">
+                        {t('promo.codeDiscount', { code: order.promotion.code })} −{price(order.discount)}
+                      </span>
+                    )}
                     <span className="flex items-baseline gap-2">
                       <span className="text-ink-3">{t('cart.total')}</span>
                       <span className="text-lg font-semibold text-ink tabular-nums">{price(order.total)}</span>

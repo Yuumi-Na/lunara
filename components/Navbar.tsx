@@ -17,11 +17,13 @@ import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuth } from '../context/AuthContext';
 import { useI18n, type TKey } from '../i18n';
+import type { Promotion } from '../types';
 import { LanguageGrid, LanguageSwitcher, ThemeToggle, UserMenu } from './HeaderControls';
 import { cx, IconButton, Sheet } from './ui';
 
 interface NavbarProps {
   currentPath: string;
+  promotions: Promotion[];
   onNavigate: (url: string) => void;
   onOpenCart: () => void;
 }
@@ -45,7 +47,7 @@ const CountBadge: React.FC<{ count: number; tone?: 'gold' | 'rose' }> = ({ count
     </span>
   ) : null;
 
-export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate, onOpenCart }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentPath, promotions, onNavigate, onOpenCart }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
@@ -57,6 +59,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate, onOpenC
     onNavigate(path);
   };
 
+  const headline =
+    promotions.find((p) => p.type === 'storewide') ??
+    promotions.find((p) => p.type === 'product') ??
+    promotions.find((p) => p.type === 'bill');
+
   const isActive = (path: string) => currentPath === path || currentPath.startsWith(`${path}/`);
 
   return (
@@ -64,8 +71,16 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate, onOpenC
       {/* Announcement bar */}
       <div className="bg-accent text-on-accent text-xs sm:text-[0.8rem] py-2 px-4 text-center tracking-wide">
         <span>{t('announce.freeShip')}</span>
-        <span aria-hidden="true" className="mx-2.5 opacity-40">·</span>
-        <span className="font-semibold text-gold-soft dark:text-bg">{t('announce.code')}</span>
+        {/* โปรโมชั่นที่กำลังใช้งาน (ลดทั้งร้านก่อน ถ้าไม่มีแสดงโค้ดลดรายบิล) */}
+        {headline && (
+          <>
+            <span aria-hidden="true" className="mx-2.5 opacity-40">·</span>
+            <span className="font-semibold text-gold-soft dark:text-bg">
+              {headline.name}
+              {headline.type === 'bill' && <span className="font-mono"> · {headline.code}</span>}
+            </span>
+          </>
+        )}
       </div>
 
       <header className="sticky top-0 z-40 bg-bg/85 backdrop-blur-md border-b border-line">

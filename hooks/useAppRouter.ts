@@ -8,7 +8,7 @@
  *
  * เส้นทางหลัก:
  *   ฝั่งลูกค้า : /, /shop, /craft, /find, /stones, /product/:id, /cart, /checkout, /wishlist, /account
- *   ฝั่งร้าน   : /admin, /admin/products, /admin/orders, /admin/reviews, /admin/media, /admin/customers
+ *   ฝั่งร้าน   : /admin, /admin/products, /admin/orders, /admin/promotions, /admin/reviews, /admin/media, /admin/customers
  * ============================================================================
  */
 
@@ -28,8 +28,8 @@ export type PageName =
   | 'admin'
   | 'not-found';
 
-export type AdminSection = 'overview' | 'products' | 'orders' | 'reviews' | 'media' | 'customers';
-const ADMIN_SECTIONS: AdminSection[] = ['overview', 'products', 'orders', 'reviews', 'media', 'customers'];
+export type AdminSection = 'overview' | 'products' | 'orders' | 'promotions' | 'reviews' | 'media' | 'customers';
+const ADMIN_SECTIONS: AdminSection[] = ['overview', 'products', 'orders', 'promotions', 'reviews', 'media', 'customers'];
 
 const STATIC_ROUTES: Record<string, PageName> = {
   '/': 'home',

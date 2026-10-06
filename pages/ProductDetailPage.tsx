@@ -12,13 +12,14 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Check, Gem, Heart, Info, Package, RefreshCw, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Check, Gem, Heart, Info, Package, RefreshCw, ShoppingBag, Tag, TicketPercent } from 'lucide-react';
 import type { Product } from '../types';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useToast } from '../context/ToastContext';
 import { LUCKY_STONES_CATALOG } from '../data/stones';
 import { ProductReviews, Stars } from '../components/ProductReviews';
+import { SalePrice } from '../components/Promotions';
 import { DEFAULT_WRIST_SIZE, PRODUCT_WRIST_SIZES } from '../data/craft';
 import { ProductCard, ProductImage } from '../components/ProductCard';
 import { Badge, Button, Container, cx, QuantityStepper } from '../components/ui';
@@ -53,7 +54,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   const { addToCart } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
   const toast = useToast();
-  const { t, price } = useI18n();
+  const { t, price, date } = useI18n();
   const content = useContent();
   const view = content.product(product);
 
@@ -153,14 +154,33 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             )}
           </div>
 
-          <div className="flex items-baseline gap-3 flex-wrap">
-            <span className="text-3xl font-semibold text-ink tabular-nums">{price(product.price)}</span>
-            {product.originalPrice && product.originalPrice > product.price && (
-              <>
-                <span className="text-lg text-ink-3 line-through tabular-nums">{price(product.originalPrice)}</span>
-                <Badge tone="rose">-{Math.round((1 - product.price / product.originalPrice) * 100)}%</Badge>
-              </>
+          <div className="space-y-3">
+            <SalePrice price={product.price} regularPrice={product.sale ? product.regularPrice : undefined} size="lg" showSavings />
+            {/* ที่มาของส่วนลด: ชื่อโปร + วันหมดเขต */}
+            {product.sale && (
+              <div className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3">
+                <Tag className="w-5 h-5 text-danger shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-danger">{t('sale.from', { name: product.sale.name })}</p>
+                  <p className="text-xs text-ink-2">
+                    {t('badge.sale')} {product.sale.label.replace(/^-/, '')}
+                    {product.sale.endAt && ` · ${t('sale.endsOn', { date: date(product.sale.endAt) })}`}
+                  </p>
+                </div>
+              </div>
             )}
+            {product.offers?.map((o) => (
+              <div key={o.promotionId} className="flex items-start gap-3 rounded-2xl border border-dashed border-gold px-4 py-3">
+                <TicketPercent className="w-5 h-5 text-gold shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold text-ink">{o.name}</p>
+                  <p className="text-xs text-ink-2">
+                    {o.minSpend ? t('sale.offerMinLong', { min: price(o.minSpend), label: o.label }) : o.label}
+                    {o.endAt && ` · ${t('sale.endsOn', { date: date(o.endAt) })}`}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="rounded-2xl bg-surface-2 p-4 flex items-start gap-3">

@@ -122,6 +122,23 @@ export interface Product {
   reviewCount?: number;
   translations?: Partial<Record<Lang, ProductTranslation>>;
   craft?: CraftSpec;
+  /** ราคาปกติก่อนลด (เซิร์ฟเวอร์ใส่ให้เมื่อสินค้ามีโปรลดราคาอัตโนมัติ) */
+  regularPrice?: number;
+  regularOriginalPrice?: number;
+  /** โปรที่ทำให้ราคานี้ลดลง (ลดทั้งร้าน / ลดรายสินค้า) */
+  sale?: SaleInfo;
+  /** โปรที่มีเงื่อนไข เช่น "ซื้อครบ ฿1,000 ลด 10%" (ลดตอน checkout เมื่อถึงเงื่อนไข) */
+  offers?: SaleInfo[];
+}
+
+export interface SaleInfo {
+  promotionId: string;
+  name: string;
+  type: PromotionType;
+  /** ป้ายส่วนลด เช่น "-15%" หรือ "-฿100" */
+  label: string;
+  minSpend?: number;
+  endAt?: string;
 }
 
 // รายการสินค้าในตะกร้า (Cart Item)
@@ -149,7 +166,11 @@ export interface Order {
   postalCode: string;
   paymentMethod: PaymentMethod;
   items: CartItem[];
-  subtotal: number;
+  subtotal: number; // ยอดสินค้า (หลังหักโปรลดราคาอัตโนมัติแล้ว)
+  saleSavings?: number; // ส่วนลดรวมจากโปรอัตโนมัติ (ลดทั้งร้าน / ลดรายสินค้า)
+  autoPromotions?: AppliedPromotion[]; // แยกตามโปรแต่ละตัว
+  discount?: number; // ส่วนลดจากโค้ดโปรโมชั่น
+  promotion?: AppliedPromotion | null;
   shippingFee: number;
   total: number;
   status: OrderStatus;
@@ -166,7 +187,12 @@ export interface AppUser {
   role: UserRole;
   createdAt?: string;
   lastLoginAt?: string;
+  /** new_member = สมัครไม่เกิน 1 เดือน, member = สมาชิกทั่วไป */
+  memberTier?: MemberTier;
+  newMemberUntil?: string;
 }
+
+export type MemberTier = 'new_member' | 'member';
 
 // รีวิวสินค้า — ชื่อ/รูปผู้รีวิวมาจากบัญชีที่ล็อกอิน (แก้ไขเองไม่ได้)
 export interface Review {
@@ -202,6 +228,82 @@ export const SHIPPING_FEE = 45;
 export function calcShipping(subtotal: number): number {
   if (subtotal <= 0) return 0;
   return subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
+}
+
+// ============================================================================
+// PROMOTIONS (โปรโมชั่น)
+// ============================================================================
+// bill       = ลดรายบิล (โค้ดสร้างอัตโนมัติ แสดงบนหน้าเว็บ) กำหนดยอดขั้นต่ำและส่วนลด
+// storewide  = ลดสินค้าทั้งร้านอัตโนมัติตามช่วงเวลา
+// product    = ลดรายสินค้า: เลือกสินค้าที่ร่วมรายการ ลดอัตโนมัติ (มียอดขั้นต่ำ / สิทธิ์ได้)
+// code       = Code ส่วนลด: ตั้งโค้ดเอง (เช่น NEW) ใช้ทั้งร้านหรือเฉพาะสินค้า ไม่แสดงบนหน้าเว็บ
+// new_member = ส่วนลดสมาชิกใหม่ (สมัครไม่เกิน 1 เดือน) ใช้ได้ 1 ครั้งต่อคน
+export type PromotionType = 'bill' | 'storewide' | 'product' | 'code' | 'new_member';
+export const PROMOTION_TYPES: PromotionType[] = ['bill', 'storewide', 'product', 'code', 'new_member'];
+/** ประเภทที่ลดราคาสินค้าอัตโนมัติ (ไม่ต้องกรอกโค้ด) */
+export const AUTO_PROMOTION_TYPES: PromotionType[] = ['storewide', 'product'];
+export type PromotionScope = 'all' | 'products';
+export type DiscountKind = 'amount' | 'percent';
+export type PromotionStatus = 'scheduled' | 'active' | 'expired' | 'disabled' | 'used_up';
+
+export interface Promotion {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  image?: string;
+  type: PromotionType;
+  startAt: string;
+  endAt: string;
+  enabled: boolean;
+  discountKind: DiscountKind;
+  discountValue: number;
+  maxDiscount?: number | null; // เพดานส่วนลด (เฉพาะแบบเปอร์เซ็นต์)
+  minSpend: number;
+  perUserLimit: number | null; // ผู้ใช้ 1 คนใช้ได้กี่ครั้งต่อแคมเปญ (null = ไม่จำกัด)
+  totalLimit: number | null; // ทั้งแคมเปญใช้ได้รวมกี่ครั้ง (null = ไม่จำกัด)
+  signupFrom?: string | null; // new_member: สมัครตั้งแต่วันที่
+  scope?: PromotionScope; // code: ใช้ทั้งร้าน หรือเฉพาะสินค้าที่เลือก
+  productIds?: string[]; // product / code(scope=products): สินค้าที่ร่วมรายการ
+  createdAt: string;
+  updatedAt: string;
+  usedCount?: number; // คำนวณจากคำสั่งซื้อ
+}
+
+export interface AppliedPromotion {
+  id: string;
+  code: string;
+  name: string;
+  type: PromotionType;
+  discount: number;
+}
+
+/** ผลการคำนวณราคา (จากเซิร์ฟเวอร์) สำหรับหน้า Checkout */
+export interface CheckoutQuote {
+  lines: {
+    productId: string;
+    selectedSize: string;
+    unitPrice: number;
+    regularPrice: number;
+    quantity: number;
+    /** โปรอัตโนมัติที่ลดรายการนี้ */
+    promotion: SaleInfo | null;
+  }[];
+  regularSubtotal: number;
+  saleSavings: number;
+  autoPromotions: AppliedPromotion[];
+  /** โปรอัตโนมัติที่ยังไม่ถึงเงื่อนไข (เช่น ยอดยังไม่ถึงขั้นต่ำ) */
+  pendingOffers: (SaleInfo & { reason: string })[];
+  subtotal: number;
+  discount: number;
+  promotion: AppliedPromotion | null;
+  promoError: string | null;
+  shippingFee: number;
+  total: number;
+  available: (Pick<Promotion, 'id' | 'code' | 'name' | 'type' | 'discountKind' | 'discountValue' | 'maxDiscount' | 'minSpend' | 'endAt' | 'image'> & {
+    eligible: boolean;
+    reason: string | null;
+  })[];
 }
 
 /**
@@ -260,3 +362,43 @@ export type ReviewFormValues = z.infer<typeof reviewSchema>;
 export const reviewReplySchema = z.object({
   reply: z.string().trim().min(1, { message: 'err.replyEmpty' }).max(1000, { message: 'err.reviewTooLong' }),
 });
+
+// Zod Schema สำหรับฟอร์มโปรโมชั่น (admin)
+const optionalLimit = z.number().int().min(1, { message: 'err.limit' }).nullable();
+
+export const promotionFormSchema = z
+  .object({
+    name: z.string().trim().min(2, { message: 'err.promoName' }).max(100),
+    description: z.string().trim().max(500).optional(),
+    image: z.string().trim().optional(),
+    code: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9-]{3,32}$/, { message: 'err.promoCode' })
+      .optional()
+      .or(z.literal('')),
+    type: z.enum(['bill', 'storewide', 'product', 'code', 'new_member']),
+    startAt: z.string().min(1, { message: 'err.promoStart' }),
+    endAt: z.string().min(1, { message: 'err.promoEnd' }),
+    enabled: z.boolean(),
+    discountKind: z.enum(['amount', 'percent']),
+    discountValue: z.number({ message: 'err.discountValue' }).positive({ message: 'err.discountValue' }),
+    maxDiscount: z.number().positive().nullable().optional(),
+    minSpend: z.number({ message: 'err.minSpend' }).min(0, { message: 'err.minSpend' }),
+    perUserLimit: optionalLimit,
+    totalLimit: optionalLimit,
+    signupFrom: z.string().nullable().optional(),
+    scope: z.enum(['all', 'products']).optional(),
+    productIds: z.array(z.string()).max(200).optional(),
+  })
+  .refine((v) => new Date(v.endAt).getTime() > new Date(v.startAt).getTime(), { message: 'err.promoRange', path: ['endAt'] })
+  .refine((v) => v.discountKind !== 'percent' || v.discountValue <= 90, { message: 'err.percentMax', path: ['discountValue'] })
+  .refine((v) => v.type !== 'new_member' || !!v.signupFrom, { message: 'err.signupFrom', path: ['signupFrom'] })
+  .refine((v) => v.type !== 'code' || !!v.code?.trim(), { message: 'err.customCode', path: ['code'] })
+  .refine(
+    (v) => !(v.type === 'product' || (v.type === 'code' && v.scope === 'products')) || (v.productIds?.length ?? 0) > 0,
+    { message: 'err.productIds', path: ['productIds'] }
+  );
+
+export type PromotionFormValues = z.infer<typeof promotionFormSchema>;

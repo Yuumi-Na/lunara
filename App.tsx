@@ -17,15 +17,15 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { CartProvider } from './context/CartContext';
+import { CartProvider, useCart } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
 import { I18nProvider, useI18n } from './i18n';
 import { useAppRouter } from './hooks/useAppRouter';
-import { fetchProducts } from './services/api';
-import type { Product } from './types';
+import { fetchActivePromotions, fetchProducts } from './services/api';
+import type { Product, Promotion } from './types';
 import { INITIAL_PRODUCTS } from './data/products';
 
 import { Navbar, MobileTabBar } from './components/Navbar';
@@ -50,10 +50,18 @@ import { Compass } from 'lucide-react';
 function MainAppContent() {
   const router = useAppRouter();
   const { user, openLogin } = useAuth();
+  const { syncProducts } = useCart();
   const { t } = useI18n();
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [productsLoading, setProductsLoading] = useState(true);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+
+  // โปรโมชั่นที่กำลังใช้งาน (แถบประกาศ + หน้าแรก)
+  const reloadPromotions = useCallback(() => {
+    fetchActivePromotions().then(setPromotions).catch(() => setPromotions([]));
+  }, []);
+  useEffect(reloadPromotions, [reloadPromotions]);
 
   // [โมดูล 10: API] โหลดข้อมูลสินค้าจาก REST API (ฐานข้อมูล SQLite)
   const reloadProducts = useCallback(async () => {
@@ -70,6 +78,11 @@ function MainAppContent() {
     reloadProducts();
   }, [reloadProducts]);
 
+  // ราคาในตะกร้าตามราคาล่าสุด (เช่น ช่วงโปรลดทั้งร้าน)
+  useEffect(() => {
+    if (!productsLoading) syncProducts(products);
+  }, [products, productsLoading, syncProducts]);
+
   const navigate = router.push;
   const viewProduct = (id: string) => navigate(`/product/${encodeURIComponent(id)}`);
 
@@ -82,7 +95,9 @@ function MainAppContent() {
   const renderPage = () => {
     switch (router.page) {
       case 'home':
-        return <HomePage products={products} loading={productsLoading} onNavigate={navigate} onViewProduct={viewProduct} />;
+        return (
+          <HomePage products={products} promotions={promotions} loading={productsLoading} onNavigate={navigate} onViewProduct={viewProduct} />
+        );
       case 'shop':
         return (
           <ShopPage
@@ -132,6 +147,10 @@ function MainAppContent() {
             section={router.adminSection}
             products={products}
             onProductsChange={setProducts}
+            onPromotionsChange={() => {
+              reloadPromotions();
+              reloadProducts();
+            }}
             onNavigate={navigate}
             onViewProduct={viewProduct}
           />
@@ -143,7 +162,7 @@ function MainAppContent() {
 
   return (
     <div className="min-h-screen flex flex-col bg-bg text-ink">
-      <Navbar currentPath={router.pathname} onNavigate={navigate} onOpenCart={() => setIsCartOpen(true)} />
+      <Navbar currentPath={router.pathname} promotions={promotions} onNavigate={navigate} onOpenCart={() => setIsCartOpen(true)} />
 
       <main className="flex-1 pb-16 lg:pb-0">{renderPage()}</main>
 

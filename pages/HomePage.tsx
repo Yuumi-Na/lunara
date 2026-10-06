@@ -16,7 +16,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, Compass, Gem, ShieldCheck, Sparkles, Star } from 'lucide-react';
-import type { IntentionType, Product } from '../types';
+import type { IntentionType, Product, Promotion } from '../types';
+import { PromotionCard } from '../components/Promotions';
 import { INTENTIONS } from '../types';
 import { ProductGrid } from '../components/ProductCard';
 import { Button, Container, SectionHeader } from '../components/ui';
@@ -28,6 +29,7 @@ import { useContent } from '../i18n/content';
 
 interface HomePageProps {
   products: Product[];
+  promotions: Promotion[];
   loading: boolean;
   onNavigate: (url: string) => void;
   onViewProduct: (productId: string) => void;
@@ -44,7 +46,8 @@ const INTENTION_ICONS: Record<IntentionType, string> = {
   Confidence: '★',
 };
 
-export const HomePage: React.FC<HomePageProps> = ({ products, loading, onNavigate, onViewProduct }) => {
+export const HomePage: React.FC<HomePageProps> = ({ products,
+  promotions, loading, onNavigate, onViewProduct }) => {
   const { t, lang } = useI18n();
   const [featured, setFeatured] = useState<{ reviews: FeaturedReview[]; stats: { rating: number; count: number } } | null>(null);
 
@@ -134,6 +137,18 @@ export const HomePage: React.FC<HomePageProps> = ({ products, loading, onNavigat
           </div>
         </Container>
       </section>
+
+      {/* PROMOTIONS — โปรโมชั่นที่กำลังใช้งาน (ซ่อนถ้าไม่มี) */}
+      {promotions.length > 0 && (
+        <Container>
+          <SectionHeader eyebrow={t('home.promoEyebrow')} title={t('home.promoTitle')} />
+          <div className="grid md:grid-cols-2 gap-4 sm:gap-5">
+            {promotions.slice(0, 4).map((p) => (
+              <PromotionCard key={p.id} promotion={p} />
+            ))}
+          </div>
+        </Container>
+      )}
 
       {/* 2. INTENTIONS */}
       <Container>

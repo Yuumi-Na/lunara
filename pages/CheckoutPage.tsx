@@ -8,18 +8,20 @@
  *
  * - ต้องล็อกอินด้วย Google ก่อนเท่านั้น (ทั้งหน้าเว็บ และ API ฝั่งเซิร์ฟเวอร์ตรวจซ้ำ)
  * - ราคาสุทธิคำนวณใหม่ที่เซิร์ฟเวอร์จากฐานข้อมูล ไม่เชื่อราคาจากเบราว์เซอร์
+ * - โค้ดโปรโมชั่น 1 โค้ดต่อบิล: เซิร์ฟเวอร์ตรวจเงื่อนไข/สิทธิ์ และคืนราคาที่หักส่วนลดแล้ว (POST /api/checkout/quote)
  * ============================================================================
  */
 
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, CheckCircle2, CreditCard, Lock, QrCode, ShieldCheck, Truck } from 'lucide-react';
-import { checkoutSchema, type CheckoutFormValues, type Order, type PaymentMethod } from '../types';
+import { ArrowLeft, CheckCircle2, CreditCard, Lock, QrCode, ShieldCheck, Tag, TicketPercent, Truck } from 'lucide-react';
+import { checkoutSchema, type CheckoutFormValues, type CheckoutQuote, type Order, type PaymentMethod } from '../types';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { ApiError, createOrder } from '../services/api';
+import { ApiError, createOrder, fetchQuote } from '../services/api';
+import { PromoCodeBox, SaleChip, SalePrice } from '../components/Promotions';
 import { ProductImage } from '../components/ProductCard';
 import { GoogleSignInButton } from '../components/LoginModal';
 import { Badge, Button, Container, cx, EmptyState, Field, Input, PageHeader, Spinner, Textarea } from '../components/ui';
@@ -38,13 +40,42 @@ const PAYMENTS: { id: PaymentMethod; icon: React.FC<{ className?: string }>; des
 ];
 
 export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate, onOrderPlaced }) => {
-  const { cart, subtotal, shippingFee, total, clearCart, removeFromCart } = useCart();
+  const { cart, subtotal: localSubtotal, shippingFee: localShipping, total: localTotal, clearCart, removeFromCart } = useCart();
   const { user, isLoading } = useAuth();
   const toast = useToast();
   const { t, tk, price } = useI18n();
   const content = useContent();
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState<Order | null>(null);
+
+  // ราคาจากเซิร์ฟเวอร์ (รวมโปรลดทั้งร้าน + โค้ดส่วนลด)
+  const [promoCode, setPromoCode] = useState<string | null>(null);
+  const [quote, setQuote] = useState<CheckoutQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
+
+  useEffect(() => {
+    if (cart.length === 0 || completed) return;
+    let cancelled = false;
+    setQuoting(true);
+    const timer = setTimeout(() => {
+      fetchQuote(cart, promoCode)
+        .then((q) => !cancelled && setQuote(q))
+        .catch(() => !cancelled && setQuote(null))
+        .finally(() => !cancelled && setQuoting(false));
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [cart, promoCode, user?.email, completed]);
+
+  const subtotal = quote ? quote.regularSubtotal : localSubtotal;
+  const saleSavings = quote?.saleSavings ?? 0;
+  const discount = quote?.discount ?? 0;
+  const shippingFee = quote ? quote.shippingFee : localShipping;
+  const total = quote ? quote.total : localTotal;
+  const lineOf = (productId: string, size: string) => quote?.lines.find((l) => l.productId === productId && l.selectedSize === size);
+  const totalSavings = saleSavings + discount;
 
   const {
     register,
@@ -76,13 +107,17 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate, onOrderP
   const onSubmit = async (values: CheckoutFormValues) => {
     setSubmitting(true);
     try {
-      const order = await createOrder(values, cart);
+      const order = await createOrder(values, cart, quote?.promotion?.code ?? null);
       clearCart();
       setCompleted(order);
       onOrderPlaced();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'OUT_OF_STOCK') {
+      if (err instanceof ApiError && err.code === 'PROMO_REJECTED') {
+        // สิทธิ์โค้ดเปลี่ยนระหว่างกรอกฟอร์ม (เช่น สิทธิ์ครบแล้ว) -> แจ้งและคำนวณราคาใหม่
+        toast(tk(err.reason), 'error');
+        setPromoCode(null);
+      } else if (err instanceof ApiError && err.code === 'OUT_OF_STOCK') {
         toast(t('checkout.outOfStock'), 'error');
       } else if (err instanceof ApiError && err.code === 'NOT_FOUND' && err.productId) {
         removeFromCart(err.productId, cart.find((c) => c.product.id === err.productId)?.selectedSize ?? '');
@@ -119,6 +154,15 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate, onOrderP
             />
             <Row label={t('order.payment')} value={content.payment(completed.paymentMethod)} />
             <Row label={t('order.status')} value={<Badge tone="info">{content.status(completed.status)}</Badge>} />
+            {(completed.autoPromotions ?? []).map((p) => (
+              <Row key={p.id} label={p.name} value={<span className="text-danger">−{price(p.discount)}</span>} />
+            ))}
+            {completed.promotion && (
+              <Row
+                label={t('promo.codeDiscount', { code: completed.promotion.code })}
+                value={<span className="text-success">−{price(completed.promotion.discount)}</span>}
+              />
+            )}
             <div className="flex justify-between items-baseline pt-3 border-t border-line">
               <span className="font-medium text-ink">{t('cart.total')}</span>
               <span className="text-2xl font-semibold text-ink tabular-nums">{price(completed.total)}</span>
@@ -260,6 +304,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate, onOrderP
           <ul className="space-y-4 max-h-80 overflow-y-auto pr-1">
             {cart.map((item) => {
               const v = content.product(item.product);
+              const line = lineOf(item.product.id, item.selectedSize);
               return (
                 <li key={`${item.product.id}-${item.selectedSize}`} className="flex items-center gap-3">
                   <div className="relative shrink-0">
@@ -271,17 +316,55 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate, onOrderP
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-ink line-clamp-1">{v.name}</p>
                     <p className="text-xs text-ink-3">{t('cart.size', { size: item.selectedSize })}</p>
+                    {line?.promotion && <SaleChip sale={line.promotion} className="mt-1" />}
                   </div>
-                  <span className="text-sm font-medium text-ink tabular-nums">{price(item.product.price * item.quantity)}</span>
+                  <span className="text-right shrink-0">
+                    <SalePrice
+                      size="sm"
+                      price={line?.unitPrice ?? item.product.price}
+                      regularPrice={line?.promotion ? line.regularPrice : undefined}
+                      quantity={item.quantity}
+                    />
+                  </span>
                 </li>
               );
             })}
           </ul>
+          <div className="pt-4 border-t border-line">
+            <PromoCodeBox
+              quote={quote}
+              appliedCode={promoCode}
+              loading={quoting && !!promoCode && !quote?.promotion}
+              onApply={(code) => setPromoCode(code)}
+              onRemove={() => setPromoCode(null)}
+            />
+          </div>
           <dl className="space-y-2 text-sm pt-4 border-t border-line">
             <div className="flex justify-between text-ink-2">
               <dt>{t('cart.subtotal')}</dt>
               <dd className="text-ink tabular-nums">{price(subtotal)}</dd>
             </div>
+            {/* ส่วนลดแยกตามโปรโมชั่น เพื่อให้รู้ว่าลดจากโปรไหน */}
+            {quote?.autoPromotions.map((p) => (
+              <div key={p.id} className="flex justify-between gap-3 text-ink-2">
+                <dt className="flex items-center gap-1.5 min-w-0">
+                  <Tag className="w-3.5 h-3.5 text-danger shrink-0" />
+                  <span className="truncate">{p.name}</span>
+                </dt>
+                <dd className="text-danger tabular-nums shrink-0">−{price(p.discount)}</dd>
+              </div>
+            ))}
+            {discount > 0 && quote?.promotion && (
+              <div className="flex justify-between gap-3 text-ink-2">
+                <dt className="flex items-center gap-1.5 min-w-0">
+                  <TicketPercent className="w-3.5 h-3.5 text-danger shrink-0" />
+                  <span className="truncate">
+                    {t('promo.codeDiscount', { code: quote.promotion.code })} · {quote.promotion.name}
+                  </span>
+                </dt>
+                <dd className="text-danger tabular-nums shrink-0">−{price(discount)}</dd>
+              </div>
+            )}
             <div className="flex justify-between text-ink-2">
               <dt>{t('cart.shipping')}</dt>
               <dd className={shippingFee === 0 ? 'text-success' : 'text-ink tabular-nums'}>
@@ -293,6 +376,21 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate, onOrderP
               <dd className="text-2xl font-semibold text-ink tabular-nums">{price(total)}</dd>
             </div>
           </dl>
+          {totalSavings > 0 && (
+            <p className="rounded-xl bg-danger-soft text-danger text-sm font-semibold text-center py-2.5">
+              {t('sale.totalSaved', { amount: price(totalSavings) })}
+            </p>
+          )}
+          {/* โปรที่ยังไม่ถึงเงื่อนไข */}
+          {quote?.pendingOffers.map((o) => (
+            <p key={o.promotionId} className="flex items-start gap-2 text-xs text-ink-2 rounded-xl border border-dashed border-gold px-3 py-2">
+              <TicketPercent className="w-4 h-4 text-gold shrink-0" />
+              <span>
+                <strong className="text-ink">{o.name}</strong> ({o.label}) ·{' '}
+                {o.reason === 'promo.errMinSpend' && o.minSpend ? t('sale.needMin', { min: price(o.minSpend) }) : tk(o.reason)}
+              </span>
+            </p>
+          ))}
         </aside>
       </div>
     </Container>

@@ -17,13 +17,17 @@ import type {
   OrderStatus,
   Product,
   ProductFormValues,
+  Promotion,
+  PromotionFormValues,
+  PromotionStatus,
+  CheckoutQuote,
   Review,
   ReviewEligibility,
   ReviewFormValues,
 } from '../types';
 
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string, public productId?: string) {
+  constructor(public status: number, public code: string, message: string, public productId?: string, public reason?: string) {
     super(message);
   }
 }
@@ -36,7 +40,7 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(url, { ...init, headers, credentials: 'same-origin' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.success === false) {
-    throw new ApiError(res.status, json.code || 'ERROR', json.message || res.statusText, json.productId);
+    throw new ApiError(res.status, json.code || 'ERROR', json.message || res.statusText, json.productId, json.reason);
   }
   return json as T;
 }
@@ -129,14 +133,27 @@ export async function fetchAllOrders(): Promise<Order[]> {
   return (await request<{ data: Order[] }>('/api/orders?scope=all')).data;
 }
 
-export async function createOrder(shipping: CheckoutFormValues, cart: CartItem[]): Promise<Order> {
+const toRequestItems = (cart: CartItem[]) =>
+  cart.map((item) => ({
+    productId: item.product.id,
+    quantity: item.quantity,
+    selectedSize: item.selectedSize,
+    craft: item.product.craft,
+  }));
+
+/** ให้เซิร์ฟเวอร์คำนวณราคาจริง + ส่วนลดโปรโมชั่น ก่อนสั่งซื้อ */
+export async function fetchQuote(cart: CartItem[], promoCode?: string | null): Promise<CheckoutQuote> {
+  return (await request<{ data: CheckoutQuote }>('/api/checkout/quote', send('POST', { items: toRequestItems(cart), promoCode }))).data;
+}
+
+export async function createOrder(shipping: CheckoutFormValues, cart: CartItem[], promoCode?: string | null): Promise<Order> {
   const items = cart.map((item) => ({
     productId: item.product.id,
     quantity: item.quantity,
     selectedSize: item.selectedSize,
     craft: item.product.craft,
   }));
-  return (await request<{ data: Order }>('/api/orders', send('POST', { ...shipping, items }))).data;
+  return (await request<{ data: Order }>('/api/orders', send('POST', { ...shipping, items, promoCode }))).data;
 }
 
 export async function updateOrderStatus(id: string, status: OrderStatus): Promise<Order> {
@@ -199,6 +216,7 @@ export interface AdminStats {
   productCount: number;
   lowStock: { id: string; name: string; stock: number }[];
   customerCount: number;
+  activePromotions: number;
   unansweredReviews: number;
   imageCount: number;
 }
@@ -220,4 +238,29 @@ export async function updateAdminReview(id: string, changes: { reply?: string | 
 
 export async function fetchCustomers(): Promise<(AppUser & { orderCount: number })[]> {
   return (await request<{ data: (AppUser & { orderCount: number })[] }>('/api/admin/users')).data;
+}
+
+// ----------------------------------------------------------------------------
+// 5. PROMOTIONS
+// ----------------------------------------------------------------------------
+export async function fetchActivePromotions(): Promise<Promotion[]> {
+  return (await request<{ data: Promotion[] }>('/api/promotions')).data;
+}
+
+export type AdminPromotion = Promotion & { status: PromotionStatus };
+
+export async function fetchAdminPromotions(): Promise<AdminPromotion[]> {
+  return (await request<{ data: AdminPromotion[] }>('/api/admin/promotions')).data;
+}
+
+export async function createPromotion(values: PromotionFormValues): Promise<Promotion> {
+  return (await request<{ data: Promotion }>('/api/admin/promotions', send('POST', values))).data;
+}
+
+export async function updatePromotion(id: string, values: PromotionFormValues): Promise<Promotion> {
+  return (await request<{ data: Promotion }>('/api/admin/promotions/' + encodeURIComponent(id), send('PUT', values))).data;
+}
+
+export async function deletePromotion(id: string): Promise<void> {
+  await request('/api/admin/promotions/' + encodeURIComponent(id), send('DELETE'));
 }

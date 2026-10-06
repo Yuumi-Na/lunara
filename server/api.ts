@@ -29,6 +29,12 @@
  * 🔓 GET    /api/reviews/featured     -> รีวิวล่าสุดสำหรับหน้าแรก
  * 🛡️ GET    /api/admin/reviews        -> รีวิวทั้งหมด (รวมที่ซ่อน) สำหรับหลังร้าน
  * 🛡️ PATCH  /api/admin/reviews/:id    -> ตอบกลับลูกค้า / ซ่อน / แสดงรีวิว
+ * 🔓 GET    /api/promotions           -> โปรโมชั่นที่กำลังใช้งาน (หน้าแรก)
+ * 🔓 POST   /api/checkout/quote       -> คำนวณราคา + ส่วนลด ก่อนสั่งซื้อ
+ * 🛡️ GET    /api/admin/promotions     -> โปรโมชั่นทั้งหมด
+ * 🛡️ POST   /api/admin/promotions     -> สร้างโปรโมชั่น (ลดรายบิล / ลดทั้งร้าน / ลดรายสินค้า / Code ส่วนลด / สมาชิกใหม่)
+ * 🛡️ PUT    /api/admin/promotions/:id -> แก้ไขโปรโมชั่น
+ * 🛡️ DELETE /api/admin/promotions/:id -> ลบโปรโมชั่น
  * 🛡️ GET    /api/admin/users          -> รายชื่อลูกค้า
  * 🛡️ GET    /api/admin/stats          -> สรุปภาพรวมร้าน
  * ============================================================================
@@ -37,16 +43,17 @@
 import crypto from 'crypto';
 import { Response, Router } from 'express';
 import { z } from 'zod';
-import { calcCraftPrice, CRAFT_MAX_STONES, CRAFT_MIN_STONES } from '../data/craft.ts';
-import { LUCKY_STONES_CATALOG } from '../data/stones.ts';
+import { CRAFT_MAX_STONES, CRAFT_MIN_STONES } from '../data/craft.ts';
+import { generatePromoCode, promotionStatus } from '../data/promotions.ts';
 import {
-  calcShipping,
-  CartItem,
+  calcShipping as calcShippingAfter,
   checkoutSchema,
   Order,
   ORDER_STATUSES,
   Product,
   productFormSchema,
+  promotionFormSchema,
+  Promotion,
   reviewReplySchema,
   reviewSchema,
 } from '../types/index.ts';
@@ -63,6 +70,7 @@ import {
 } from './auth.ts';
 import * as store from './db.ts';
 import { countImages, media } from './media.ts';
+import { activeAutoPromotions, buildQuote, checkPromotion, priceItems, PricingError, withPromotions } from './pricing.ts';
 
 export const api = Router();
 
@@ -85,9 +93,13 @@ api.post('/auth/admin-login', handlePasswordLogin);
 // 1. PRODUCTS API (โมดูล 9 & 10: CRUD)
 // ----------------------------------------------------------------------------
 // คะแนนรีวิวคำนวณจากรีวิวจริงในฐานข้อมูลเท่านั้น
+// และราคาลด/ข้อเสนอจากโปรอัตโนมัติ (ลดทั้งร้าน / ลดรายสินค้า)
 function withReviewStats(products: Product[]): Product[] {
   const stats = store.reviewStats();
-  return products.map((p) => ({ ...p, rating: stats.get(p.id)?.rating ?? 0, reviewCount: stats.get(p.id)?.count ?? 0 }));
+  const auto = activeAutoPromotions();
+  return products.map((p) =>
+    withPromotions({ ...p, rating: stats.get(p.id)?.rating ?? 0, reviewCount: stats.get(p.id)?.count ?? 0 }, auto)
+  );
 }
 
 api.get('/products', (_req, res) => {
@@ -209,8 +221,7 @@ api.get('/orders', requireAuth, (req, res) => {
   res.json({ success: true, count: orders.length, data: orders });
 });
 
-const orderRequestSchema = checkoutSchema.extend({
-  items: z
+const itemsSchema = z
     .array(
       z.object({
         productId: z.string(),
@@ -225,66 +236,69 @@ const orderRequestSchema = checkoutSchema.extend({
           .optional(),
       })
     )
-    .min(1),
+    .min(1)
+    .max(50);
+
+const promoCodeSchema = z.string().trim().max(40).optional().nullable();
+
+const orderRequestSchema = checkoutSchema.extend({
+  items: itemsSchema,
+  promoCode: promoCodeSchema,
 });
 
-// สร้างข้อมูลกำไลคราฟต์ฝั่งเซิร์ฟเวอร์จากหินที่เลือก (ราคาคำนวณใหม่เสมอ)
-function buildCraftProduct(id: string, craft: { stoneIds: string[]; beadSize: string; charm: string }): Product {
-  const stones = craft.stoneIds.map((sid) => {
-    const stone = LUCKY_STONES_CATALOG.find((s) => s.id === sid);
-    if (!stone) throw new Error(`Unknown stone: ${sid}`);
-    return stone;
-  });
-  return {
-    id,
-    name: `กำไลคราฟต์ผสมหิน "${stones.map((s) => s.nameTh).join(' & ')}"`,
-    englishName: `Custom Bracelet (${stones.map((s) => s.nameEn).join(' & ')})`,
-    stone: stones.map((s) => `${s.nameTh} (${s.nameEn})`).join(' + '),
-    price: calcCraftPrice(craft.beadSize, stones.length),
-    image: '/bracelet-placeholder.svg',
-    intentions: Array.from(new Set(stones.flatMap((s) => s.category))),
-    colors: Array.from(new Set(stones.map((s) => s.color))),
-    style: 'Luxury',
-    stock: 99,
-    description: '',
-    belief: '',
-    craft,
-  };
-}
+// คำนวณราคา + ส่วนลด (ใช้ในหน้า Checkout ก่อนกดสั่งซื้อ)
+api.post('/checkout/quote', (req, res) => {
+  const parsed = z.object({ items: itemsSchema, promoCode: promoCodeSchema }).safeParse(req.body);
+  if (!parsed.success) return fail(res, 400, 'VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid');
+  try {
+    res.json({ success: true, data: buildQuote(parsed.data.items, req.user ?? null, parsed.data.promoCode).quote });
+  } catch (err) {
+    if (err instanceof PricingError) {
+      return res.status(409).json({ success: false, code: err.code, productId: err.productId, message: err.code });
+    }
+    throw err;
+  }
+});
 
 api.post('/orders', requireAuth, (req, res) => {
   const parsed = orderRequestSchema.safeParse(req.body);
   if (!parsed.success) return fail(res, 400, 'VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid');
-  const { items: requested, fullName, ...shipping } = parsed.data;
+  const { items: requested, fullName, promoCode, ...shipping } = parsed.data;
+  const user = req.user!;
 
   try {
+    // ทำทั้งหมดใน transaction: ตรวจสต็อก -> ตัดสต็อก -> ตรวจโค้ด/สิทธิ์ -> บันทึกคำสั่งซื้อ
     const order = store.transaction(() => {
-      const items: CartItem[] = requested.map((it) => {
-        if (it.craft) {
-          return { product: buildCraftProduct(it.productId, it.craft), quantity: it.quantity, selectedSize: it.selectedSize };
-        }
-        const product = store.getProduct(it.productId);
-        if (!product) throw Object.assign(new Error('NOT_FOUND'), { code: 'NOT_FOUND', productId: it.productId });
-        if (product.stock < it.quantity) {
-          throw Object.assign(new Error('OUT_OF_STOCK'), { code: 'OUT_OF_STOCK', productId: it.productId });
-        }
-        store.saveProduct({ ...product, stock: product.stock - it.quantity });
-        return { product, quantity: it.quantity, selectedSize: it.selectedSize };
-      });
+      const { items, subtotal, saleSavings, autoPromotions } = priceItems(requested, user, { checkStock: true });
+      for (const it of items) {
+        if (it.product.craft) continue;
+        const stored = store.getProduct(it.product.id)!;
+        store.saveProduct({ ...stored, stock: stored.stock - it.quantity });
+      }
 
-      // ราคาคำนวณจากฐานข้อมูลเท่านั้น
-      const subtotal = items.reduce((sum, it) => sum + it.product.price * it.quantity, 0);
-      const shippingFee = calcShipping(subtotal);
+      let promotion: Order['promotion'] = null;
+      if (promoCode) {
+        const p = store.findPromotionByCode(promoCode);
+        const check = p ? checkPromotion(p, user, items) : { reason: 'promo.errInvalid', discount: 0 };
+        if (!p || check.reason) throw Object.assign(new Error('PROMO'), { code: 'PROMO_REJECTED', reason: check.reason });
+        promotion = { id: p.id, code: p.code, name: p.name, type: p.type, discount: check.discount };
+      }
 
+      const discount = promotion?.discount ?? 0;
+      const shippingFee = calcShippingAfter(subtotal - discount);
       const newOrder: Order = {
         ...shipping,
         customerName: fullName,
         id: `ORD-${Date.now().toString(36).toUpperCase()}${crypto.randomInt(100, 999)}`,
-        userEmail: req.user!.email,
+        userEmail: user.email,
         items,
         subtotal,
+        saleSavings,
+        autoPromotions,
+        discount,
+        promotion,
         shippingFee,
-        total: subtotal + shippingFee,
+        total: subtotal - discount + shippingFee,
         status: 'Ordered',
         createdAt: new Date().toISOString(),
       };
@@ -293,6 +307,9 @@ api.post('/orders', requireAuth, (req, res) => {
 
     res.status(201).json({ success: true, data: order });
   } catch (err: any) {
+    if (err?.code === 'PROMO_REJECTED') {
+      return res.status(409).json({ success: false, code: err.code, reason: err.reason, message: err.reason });
+    }
     if (err?.code === 'OUT_OF_STOCK' || err?.code === 'NOT_FOUND') {
       return res.status(409).json({ success: false, code: err.code, productId: err.productId, message: err.code });
     }
@@ -349,6 +366,92 @@ api.patch('/admin/reviews/:id', requireAdmin, (req, res) => {
   res.json({ success: true, data: updated });
 });
 
+// ----------------------------------------------------------------------------
+// 5. PROMOTIONS (โปรโมชั่น)
+// ----------------------------------------------------------------------------
+// สาธารณะ: โปรที่กำลังใช้งาน (ไม่เปิดเผยจำนวนการใช้)
+api.get('/promotions', (_req, res) => {
+  const data = store
+    .listPromotions()
+    // "Code ส่วนลด" เป็นโค้ดที่ร้านแจกเอง ไม่แสดงบนหน้าเว็บ
+    .filter((p) => p.type !== 'code' && promotionStatus(p) === 'active')
+    .map(({ usedCount: _used, totalLimit: _total, ...p }) => p);
+  res.json({ success: true, data });
+});
+
+api.get('/admin/promotions', requireAdmin, (_req, res) => {
+  res.json({ success: true, data: store.listPromotions().map((p) => ({ ...p, status: promotionStatus(p) })) });
+});
+
+function normalizePromotion(input: unknown, existing: Promotion | null): { error?: string; promotion?: Promotion } {
+  const parsed = promotionFormSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid' };
+  const v = parsed.data;
+
+  // สินค้าที่ร่วมรายการต้องมีอยู่จริง
+  const usesProducts = v.type === 'product' || (v.type === 'code' && v.scope === 'products');
+  const productIds = usesProducts ? Array.from(new Set(v.productIds ?? [])).filter((id) => store.getProduct(id)) : [];
+  if (usesProducts && productIds.length === 0) return { error: 'err.productIds' };
+
+  // ไม่ระบุโค้ด -> สร้างให้อัตโนมัติตามประเภทและวันเริ่ม (ไม่ซ้ำกับโค้ดเดิม)
+  // "Code ส่วนลด" ผู้ดูแลตั้งโค้ดเอง เช่น NEW
+  let code = v.code?.trim().toUpperCase() || (v.type === 'code' ? '' : existing?.code) || '';
+  if (!code && v.type === 'code') return { error: 'err.customCode' };
+  if (!code) {
+    do code = generatePromoCode(v.type, v.startAt);
+    while (store.promoCodeExists(code));
+  } else if (store.promoCodeExists(code, existing?.id)) {
+    return { error: 'err.promoCodeTaken' };
+  }
+
+  const now = new Date().toISOString();
+  return {
+    promotion: {
+      id: existing?.id ?? `promo-${crypto.randomUUID().slice(0, 8)}`,
+      code,
+      name: v.name,
+      description: v.description || undefined,
+      image: v.image || undefined,
+      type: v.type,
+      startAt: new Date(v.startAt).toISOString(),
+      endAt: new Date(v.endAt).toISOString(),
+      enabled: v.enabled,
+      discountKind: v.type === 'new_member' ? 'amount' : v.discountKind,
+      discountValue: v.discountValue,
+      maxDiscount: v.discountKind === 'percent' ? v.maxDiscount ?? null : null,
+      // ลดทั้งร้าน: ใช้อัตโนมัติกับทุกคน ไม่มียอดขั้นต่ำและสิทธิ์การใช้
+      // ลดรายสินค้า / Code ส่วนลด / ลดรายบิล: กำหนดยอดขั้นต่ำและสิทธิ์ได้
+      minSpend: v.type === 'storewide' ? 0 : v.minSpend,
+      perUserLimit: v.type === 'storewide' ? null : v.type === 'new_member' ? 1 : v.perUserLimit,
+      totalLimit: v.type === 'storewide' ? null : v.totalLimit,
+      signupFrom: v.type === 'new_member' && v.signupFrom ? new Date(v.signupFrom).toISOString() : null,
+      scope: v.type === 'code' ? v.scope ?? 'all' : undefined,
+      productIds: usesProducts ? productIds : undefined,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    },
+  };
+}
+
+api.post('/admin/promotions', requireAdmin, (req, res) => {
+  const { error, promotion } = normalizePromotion(req.body, null);
+  if (error) return fail(res, 400, 'VALIDATION', error);
+  res.status(201).json({ success: true, data: store.savePromotion(promotion!) });
+});
+
+api.put('/admin/promotions/:id', requireAdmin, (req, res) => {
+  const existing = store.getPromotion(req.params.id);
+  if (!existing) return fail(res, 404, 'NOT_FOUND', 'Promotion not found');
+  const { error, promotion } = normalizePromotion(req.body, existing);
+  if (error) return fail(res, 400, 'VALIDATION', error);
+  res.json({ success: true, data: store.savePromotion(promotion!) });
+});
+
+api.delete('/admin/promotions/:id', requireAdmin, (req, res) => {
+  if (!store.removePromotion(req.params.id)) return fail(res, 404, 'NOT_FOUND', 'Promotion not found');
+  res.json({ success: true });
+});
+
 api.get('/admin/users', requireAdmin, (_req, res) => {
   res.json({ success: true, data: store.listUsers(roleOf) });
 });
@@ -366,6 +469,7 @@ api.get('/admin/stats', requireAdmin, async (_req, res) => {
       productCount: products.length,
       lowStock: products.filter((p) => p.stock <= 5).map((p) => ({ id: p.id, name: p.name, stock: p.stock })),
       customerCount: store.listUsers(roleOf).length,
+      activePromotions: store.listPromotions().filter((p) => promotionStatus(p) === 'active').length,
       unansweredReviews: store.listAllReviews().filter((r) => !r.reply && !r.hidden).length,
       imageCount: await countImages(),
     },

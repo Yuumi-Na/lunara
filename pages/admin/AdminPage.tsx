@@ -11,6 +11,7 @@
  * - ภาพรวม     : ยอดขาย, คำสั่งซื้อรอดำเนินการ, สินค้าใกล้หมด
  * - สินค้า      : เพิ่ม / แก้ไข / ลบ (CRUD) พร้อมอัปโหลดรูป
  * - คำสั่งซื้อ   : ดูทุกคำสั่งซื้อ + เปลี่ยนสถานะการจัดส่ง
+ * - โปรโมชั่น   : ลดรายบิล / ลดทั้งร้าน / สมาชิกใหม่ พร้อมโค้ด วันเริ่ม-หมดอายุ และสิทธิ์การใช้
  * - รีวิว       : ดูรีวิวทั้งหมด ตอบกลับลูกค้า ซ่อน/แสดง และลบ
  * - คลังรูปภาพ  : อัปโหลด / คัดลอกลิงก์ / ลบรูปในฐานข้อมูล
  * - ลูกค้า      : รายชื่อผู้ใช้ที่ล็อกอินด้วย Google
@@ -33,6 +34,7 @@ import {
   Search,
   ShieldAlert,
   ShoppingCart,
+  TicketPercent,
   Store,
   Trash2,
   Users,
@@ -53,12 +55,15 @@ import { useI18n, type TKey } from '../../i18n';
 import { useContent } from '../../i18n/content';
 import { ProductForm } from './ProductForm';
 import { ReviewsSection } from './ReviewsSection';
+import { PromotionsSection } from './PromotionsSection';
 import { FolderBrowser } from './ImagePicker';
+import { MemberBadge } from '../../components/Promotions';
 
 interface AdminPageProps {
   section: AdminSection;
   products: Product[];
   onProductsChange: (products: Product[]) => void;
+  onPromotionsChange: () => void;
   onNavigate: (url: string) => void;
   onViewProduct: (id: string) => void;
 }
@@ -67,6 +72,7 @@ const SECTIONS: { id: AdminSection; label: TKey; icon: React.FC<{ className?: st
   { id: 'overview', label: 'admin.overview', icon: LayoutDashboard },
   { id: 'products', label: 'admin.products', icon: Package },
   { id: 'orders', label: 'admin.orders', icon: ShoppingCart },
+  { id: 'promotions', label: 'admin.promotions', icon: TicketPercent },
   { id: 'reviews', label: 'admin.reviews', icon: MessageSquareText },
   { id: 'media', label: 'admin.media', icon: Images },
   { id: 'customers', label: 'admin.customers', icon: Users },
@@ -157,6 +163,7 @@ export const AdminPage: React.FC<AdminPageProps> = (props) => {
           {props.section === 'overview' && <Overview onNavigate={props.onNavigate} />}
           {props.section === 'products' && <ProductsSection {...props} />}
           {props.section === 'orders' && <OrdersSection />}
+          {props.section === 'promotions' && <PromotionsSection products={props.products} onChanged={props.onPromotionsChange} />}
           {props.section === 'reviews' && <ReviewsSection onViewProduct={props.onViewProduct} />}
           {props.section === 'media' && <MediaSection />}
           {props.section === 'customers' && <CustomersSection />}
@@ -339,13 +346,14 @@ const Overview: React.FC<{ onNavigate: (url: string) => void }> = ({ onNavigate 
     { label: 'admin.productCount', value: stats?.productCount, icon: Package, to: '/admin/products' },
     { label: 'admin.customerCount', value: stats?.customerCount, icon: Users, to: '/admin/customers' },
     { label: 'ar.unanswered', value: stats?.unansweredReviews, icon: MessageSquareText, to: '/admin/reviews' },
+    { label: 'promo.activeCount', value: stats?.activePromotions, icon: TicketPercent, to: '/admin/promotions' },
   ];
 
   return (
     <div className="space-y-8">
       <SectionTitle title={t('admin.overview')} subtitle={t('admin.overviewDesc')} />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
         {cards.map(({ label, value, icon: Icon, to }) => (
           <button key={label} type="button" onClick={() => onNavigate(to)} className="card card-hover p-5 text-left">
             <Icon className="w-5 h-5 text-gold mb-4" />
@@ -711,6 +719,18 @@ const OrdersSection: React.FC = () => {
                 </li>
               ))}
             </ul>
+            {(open.autoPromotions ?? []).map((p) => (
+              <div key={p.id} className="flex justify-between gap-3">
+                <span className="text-ink-2 truncate">{p.name}</span>
+                <span className="text-danger tabular-nums">−{price(p.discount)}</span>
+              </div>
+            ))}
+            {open.promotion && (
+              <div className="flex justify-between">
+                <span className="text-ink-2">{t('promo.codeDiscount', { code: open.promotion.code })}</span>
+                <span className="text-success tabular-nums">−{price(open.promotion.discount)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-ink-2">{t('cart.shipping')}</span>
               <span className="text-ink tabular-nums">{open.shippingFee === 0 ? t('cart.free') : price(open.shippingFee)}</span>
@@ -781,7 +801,7 @@ const CustomersSection: React.FC = () => {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-ink truncate">{u.name}</p>
-                  {u.role === 'admin' && <Badge tone="gold">{t('role.admin')}</Badge>}
+                  {u.role === 'admin' ? <Badge tone="gold">{t('role.admin')}</Badge> : <MemberBadge tier={u.memberTier} />}
                 </div>
                 <p className="text-xs text-ink-3 truncate">{u.email}</p>
               </div>

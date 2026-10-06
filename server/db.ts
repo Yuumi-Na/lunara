@@ -11,6 +11,7 @@
  * - orders   : คำสั่งซื้อ ผูกกับอีเมลผู้สั่ง (user_email)
  * - users    : ผู้ใช้ที่ล็อกอินด้วย Google (หรือ admin แบบรหัสผ่าน)
  * - reviews  : รีวิวสินค้าจากผู้ซื้อจริง
+ * - promotions : โปรโมชั่น (ลดรายบิล / ลดทั้งร้าน / สมาชิกใหม่)
  *
  * รูปภาพเก็บเป็นไฟล์ในโฟลเดอร์ img/ (ดู server/media.ts)
  * ============================================================================
@@ -21,7 +22,8 @@ import fs from 'fs';
 import path from 'path';
 import { INITIAL_PRODUCTS } from '../data/products.ts';
 import { PRODUCT_TRANSLATIONS } from '../data/productTranslations.ts';
-import type { AppUser, Order, OrderStatus, Product, Review, UserRole } from '../types/index.ts';
+import type { AppUser, Order, OrderStatus, Product, Promotion, Review, UserRole } from '../types/index.ts';
+import { memberInfo } from '../data/promotions.ts';
 
 const STORAGE_DIR = process.env.LUNARA_STORAGE_DIR || path.resolve(process.cwd(), 'storage');
 fs.mkdirSync(STORAGE_DIR, { recursive: true });
@@ -128,7 +130,10 @@ interface UserRow {
 }
 
 function toUser(row: UserRow, role: UserRole): AppUser {
+  const member = memberInfo(row.created_at);
   return {
+    memberTier: member.tier,
+    newMemberUntil: member.newMemberUntil,
     email: row.email,
     name: row.name,
     avatar: row.avatar ?? undefined,
@@ -376,4 +381,71 @@ export function setReviewReply(id: string, text: string | null, by: string): Rev
 export function setReviewHidden(id: string, hidden: boolean): Review | null {
   db.prepare('UPDATE reviews SET hidden = ? WHERE id = ?').run(hidden ? 1 : 0, id);
   return findReview(id);
+}
+
+// ----------------------------------------------------------------------------
+// PROMOTIONS
+// ----------------------------------------------------------------------------
+db.exec(`
+  CREATE TABLE IF NOT EXISTS promotions (
+    id         TEXT PRIMARY KEY,
+    code       TEXT NOT NULL UNIQUE,
+    data       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+`);
+
+/** โปรที่คำสั่งซื้อนี้ใช้ (โค้ดส่วนลด + โปรอัตโนมัติ) — นับ 1 ครั้งต่อคำสั่งซื้อ */
+function promotionIdsOf(order: Order): string[] {
+  const ids = [order.promotion?.id, ...(order.autoPromotions ?? []).map((p) => p.id)].filter((id): id is string => !!id);
+  return Array.from(new Set(ids));
+}
+
+/** จำนวนครั้งที่โปรถูกใช้ (นับจากคำสั่งซื้อที่ไม่ถูกยกเลิก) */
+function promotionUsage(): Map<string, number> {
+  const usage = new Map<string, number>();
+  for (const order of listOrders()) {
+    if (order.status === 'Cancelled') continue;
+    for (const id of promotionIdsOf(order)) usage.set(id, (usage.get(id) ?? 0) + 1);
+  }
+  return usage;
+}
+
+export function countPromotionUseByUser(promotionId: string, email: string): number {
+  return listOrders(email).filter((o) => o.status !== 'Cancelled' && promotionIdsOf(o).includes(promotionId)).length;
+}
+
+export function listPromotions(): Promotion[] {
+  const usage = promotionUsage();
+  const rows = db.prepare('SELECT data FROM promotions ORDER BY created_at DESC').all() as { data: string }[];
+  return rows.map((r) => {
+    const p = JSON.parse(r.data) as Promotion;
+    return { ...p, usedCount: usage.get(p.id) ?? 0 };
+  });
+}
+
+export function getPromotion(id: string): Promotion | null {
+  return listPromotions().find((p) => p.id === id) ?? null;
+}
+
+export function findPromotionByCode(code: string): Promotion | null {
+  return listPromotions().find((p) => p.code.toUpperCase() === code.trim().toUpperCase()) ?? null;
+}
+
+export function promoCodeExists(code: string, exceptId?: string): boolean {
+  const row = db.prepare('SELECT id FROM promotions WHERE code = ?').get(code.toUpperCase()) as { id: string } | undefined;
+  return !!row && row.id !== exceptId;
+}
+
+export function savePromotion(p: Promotion): Promotion {
+  const { usedCount: _ignored, ...data } = p;
+  db.prepare(
+    `INSERT INTO promotions (id, code, data, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET code = excluded.code, data = excluded.data`
+  ).run(p.id, p.code, JSON.stringify(data), p.createdAt);
+  return getPromotion(p.id)!;
+}
+
+export function removePromotion(id: string): boolean {
+  return db.prepare('DELETE FROM promotions WHERE id = ?').run(id).changes > 0;
 }

@@ -18,6 +18,7 @@ import { useToast } from '../context/ToastContext';
 import { useI18n } from '../i18n';
 import { useContent } from '../i18n/content';
 import { Badge, cx } from './ui';
+import { OfferChip, SaleChip, SalePrice } from './Promotions';
 
 const FALLBACK_IMAGE =
   '/bracelet-placeholder.svg';
@@ -86,6 +87,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetail,
               {t('find.match', { score: matchScore })}
             </Badge>
           )}
+          {product.sale && (
+            <span className="rounded-lg bg-danger text-white text-xs font-bold px-2 py-1 shadow-sm">
+              {t('badge.sale')} {product.sale.label.replace(/^-/, '')}
+            </span>
+          )}
           {product.isBestSeller && <Badge tone="accent">{t('badge.bestSeller')}</Badge>}
           {product.isNewArrival && <Badge tone="gold">{t('badge.new')}</Badge>}
           {soldOut && <Badge tone="danger">{t('badge.soldOut')}</Badge>}
@@ -115,6 +121,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetail,
               </span>
             ))}
           </div>
+          {/* บอกให้ชัดว่าลดจากโปรไหน / มีข้อเสนออะไร */}
+          {(product.sale || product.offers?.length) && (
+            <div className="flex flex-col items-start gap-1 pt-1.5">
+              {product.sale && <SaleChip sale={product.sale} />}
+              {product.offers?.slice(0, 1).map((o) => <OfferChip key={o.promotionId} offer={o} />)}
+            </div>
+          )}
           {matchedReasons && matchedReasons.length > 0 && (
             <p className="text-xs text-success pt-1 line-clamp-2">✓ {matchedReasons.slice(0, 3).join(' · ')}</p>
           )}
@@ -122,12 +135,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onViewDetail,
 
         <div className="flex items-end justify-between gap-2 pt-3 border-t border-line">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-lg font-semibold text-ink tabular-nums">{price(product.price)}</span>
-              {product.originalPrice && product.originalPrice > product.price && (
-                <span className="text-xs text-ink-3 line-through tabular-nums">{price(product.originalPrice)}</span>
-              )}
-            </div>
+            {/* ขีดฆ่าราคาเฉพาะเมื่อมีโปรลดจริง (บอกที่มาของส่วนลดได้เสมอ) */}
+            <SalePrice price={product.price} regularPrice={product.sale ? product.regularPrice : undefined} />
             {!soldOut && product.stock <= 5 && (
               <span className="text-[11px] text-warn">{t('product.lowStock', { count: product.stock })}</span>
             )}

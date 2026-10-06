@@ -8,7 +8,7 @@
  * ============================================================================
  */
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import { CartItem, Product, calcShipping } from '../types';
 import { DEFAULT_WRIST_SIZE } from '../data/craft';
 
@@ -18,6 +18,8 @@ interface CartContextType {
   updateQuantity: (productId: string, selectedSize: string, delta: number) => void;
   removeFromCart: (productId: string, selectedSize: string) => void;
   clearCart: () => void;
+  /** อัปเดตราคา/ข้อมูลสินค้าในตะกร้าให้ตรงกับข้อมูลล่าสุด (เช่น เมื่อเริ่มหรือหมดโปรลดทั้งร้าน) */
+  syncProducts: (products: Product[]) => void;
   cartCount: number;
   subtotal: number;
   shippingFee: number;
@@ -97,7 +99,22 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCart([]);
   };
 
-  // 6. [Calculations] คำนวณจำนวนชิ้นและยอดรวม
+  // 6. [Sync] ใช้ราคาล่าสุดจากร้าน (สินค้าในร้านเท่านั้น กำไลคราฟต์คิดราคาจากหินที่เลือก)
+  const syncProducts = useCallback((products: Product[]) => {
+    const byId = new Map(products.map((p) => [p.id, p]));
+    setCart((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        const latest = item.product.craft ? undefined : byId.get(item.product.id);
+        if (!latest || (latest.price === item.product.price && latest.sale?.promotionId === item.product.sale?.promotionId)) return item;
+        changed = true;
+        return { ...item, product: latest };
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  // 7. [Calculations] คำนวณจำนวนชิ้นและยอดรวม
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   // ค่าจัดส่ง: ฟรีค่าจัดส่งเมื่อสั่งซื้อครบ 500 บาทขึ้นไป (หากไม่ถึง ค่าส่ง 45 บาท)
@@ -112,6 +129,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateQuantity,
         removeFromCart,
         clearCart,
+        syncProducts,
         cartCount,
         subtotal,
         shippingFee,
