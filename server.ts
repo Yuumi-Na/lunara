@@ -17,7 +17,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { attachUser, requireAppHeader } from './server/auth.ts';
+import { attachUser, GOOGLE_CLIENT_ID, PASSWORD_LOGIN_ENABLED, requireAppHeader } from './server/auth.ts';
 import { api } from './server/api.ts';
 import { serveImages } from './server/media.ts';
 
@@ -46,6 +46,13 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`✨ LUNARA Server is running at http://localhost:${PORT}`);
+    // แจ้งสิ่งที่ยังไม่ได้ตั้งค่า (เช่น เพิ่ง clone โปรเจกต์มา)
+    if (!PASSWORD_LOGIN_ENABLED) {
+      console.log('🔑 Admin password is not set. Run: npm run admin:password -- admin <your-password>');
+    }
+    if (!GOOGLE_CLIENT_ID) {
+      console.log('ℹ️  GOOGLE_CLIENT_ID is not set in .env.local — Google Sign-In is disabled.');
+    }
   });
 }
 

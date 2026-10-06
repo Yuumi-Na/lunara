@@ -172,7 +172,7 @@ export const AdminPage: React.FC<AdminPageProps> = (props) => {
 const AdminLoginOptions: React.FC = () => {
   const { passwordLoginEnabled, loginAdmin } = useAuth();
   const { t } = useI18n();
-  const [method, setMethod] = useState<'password' | 'google'>(passwordLoginEnabled ? 'password' : 'google');
+  const [method, setMethod] = useState<'password' | 'google'>('password');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -205,7 +205,7 @@ const AdminLoginOptions: React.FC = () => {
     <div className="space-y-5 text-left">
       <p className="text-sm text-ink-2 text-center">{t('admin.gateDesc')}</p>
 
-      {passwordLoginEnabled && (
+      {(
         <div role="tablist" className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-surface-2">
           {(['password', 'google'] as const).map((m) => (
             <button
@@ -225,7 +225,9 @@ const AdminLoginOptions: React.FC = () => {
         </div>
       )}
 
-      {method === 'password' && passwordLoginEnabled ? (
+      {method === 'password' && !passwordLoginEnabled ? (
+        <PasswordSetupHint />
+      ) : method === 'password' ? (
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <Field label={t('admin.username')} htmlFor="admin-username">
             <Input
@@ -272,6 +274,36 @@ const AdminLoginOptions: React.FC = () => {
       ) : (
         <GoogleSignInButton />
       )}
+    </div>
+  );
+};
+
+/** แสดงเมื่อยังไม่ได้ตั้ง Username / Password ของ admin (เช่น เพิ่ง clone โปรเจกต์มา) */
+const PasswordSetupHint: React.FC = () => {
+  const { t, lang } = useI18n();
+  const toast = useToast();
+  const command = `npm run admin:password -- admin ${lang === 'th' ? '<รหัสผ่าน>' : '<password>'}`;
+  return (
+    <div className="space-y-3 rounded-2xl bg-warn-soft p-4 text-sm">
+      <p className="font-medium text-warn flex items-center gap-2">
+        <KeyRound className="w-4 h-4" />
+        {t('admin.setupTitle')}
+      </p>
+      <p className="text-ink-2">{t('admin.setupDesc')}</p>
+      <button
+        type="button"
+        onClick={() =>
+          navigator.clipboard
+            .writeText(command)
+            .then(() => toast(t('media.copied')))
+            .catch(() => undefined)
+        }
+        title={t('media.copyLink')}
+        className="w-full text-left font-mono text-xs bg-surface text-ink rounded-xl px-3 py-2.5 border border-line break-all hover:border-gold"
+      >
+        {command}
+      </button>
+      <p className="text-xs text-ink-3">{t('admin.setupNote')}</p>
     </div>
   );
 };

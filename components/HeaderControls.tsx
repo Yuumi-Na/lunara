@@ -193,7 +193,7 @@ export const UserMenu: React.FC<{ onNavigate: (url: string) => void }> = ({ onNa
       <button
         type="button"
         onClick={() => openLogin()}
-        className="inline-flex items-center gap-2 h-10 px-4 rounded-full border border-line-strong text-sm font-medium text-ink hover:border-gold transition-colors"
+        className="inline-flex items-center gap-2 h-10 px-3 sm:px-4 rounded-full border border-line-strong text-sm font-medium text-ink whitespace-nowrap hover:border-gold transition-colors"
       >
         <UserRound className="w-4 h-4" />
         <span className="hidden sm:inline">{t('auth.signIn')}</span>

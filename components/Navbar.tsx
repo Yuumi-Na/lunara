@@ -89,7 +89,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate, onOpenC
                 onClick={() => go(link.path)}
                 aria-current={isActive(link.path) ? 'page' : undefined}
                 className={cx(
-                  'relative h-10 px-4 rounded-full text-[0.95rem] transition-colors flex items-center gap-1.5',
+                  'relative h-10 px-3 xl:px-4 rounded-full text-[0.95rem] whitespace-nowrap transition-colors flex items-center gap-1.5',
                   isActive(link.path) ? 'text-ink bg-surface-2 font-medium' : 'text-ink-2 hover:text-ink'
                 )}
               >

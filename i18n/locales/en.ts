@@ -533,4 +533,9 @@ export const en: Dict = {
   'common.retry': "Try again",
   'ar.loadFailed': "Couldn't load reviews",
   'ar.loadFailedDesc': "The server may still be running an old version. Restart npm run dev and try again.",
+
+  // admin password setup hint
+  'admin.setupTitle': "Admin password is not set up yet",
+  'admin.setupDesc': "Open a terminal in the project folder and run this command (replace <password> with a password of at least 8 characters):",
+  'admin.setupNote': "It is saved to .env.local and the server restarts automatically — then refresh this page. Meanwhile you can use the Google tab.",
 };

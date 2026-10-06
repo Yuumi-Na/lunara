@@ -556,6 +556,11 @@ export const th = {
   'common.retry': "ลองใหม่",
   'ar.loadFailed': "โหลดรีวิวไม่สำเร็จ",
   'ar.loadFailedDesc': "เซิร์ฟเวอร์อาจยังเป็นเวอร์ชันเก่า ลองรีสตาร์ท npm run dev แล้วกดลองใหม่",
+
+  // admin password setup hint
+  'admin.setupTitle': "ยังไม่ได้ตั้งรหัสผ่าน admin",
+  'admin.setupDesc': "เปิด terminal ในโฟลเดอร์โปรเจกต์ แล้วรันคำสั่งนี้ (เปลี่ยน <รหัสผ่าน> เป็นรหัสที่ต้องการ อย่างน้อย 8 ตัวอักษร):",
+  'admin.setupNote': "ระบบบันทึกลง .env.local แล้วเซิร์ฟเวอร์รีสตาร์ทเอง จากนั้นรีเฟรชหน้านี้ ระหว่างนี้ใช้แท็บ Google ได้",
 } as const;
 
 export type TKey = keyof typeof th;
