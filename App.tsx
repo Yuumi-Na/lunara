@@ -3,45 +3,37 @@
  * ============================================================================
  * [เนื้อหาที่เรียนรู้ที่ครอบคลุมทั้งหมด 10 โมดูล]:
  *
- * 1. JavaScript:
- *    - ตัวแปร, ฟังก์ชัน, Object, Array, Array Methods (.filter, .map, .reduce, .find)
- * 2. Next.js & Routing / Pages:
- *    - การแบ่งหน้าเว็บ (Home, Shop, Craft Bracelet, Find Your Bracelet, Product Detail, Cart, Checkout, Orders, Wishlist, Admin, Stones Guide)
- *    - Dynamic Route เช่น /product/:id ด้วย Browser History API
- * 3. React / Components:
- *    - การแยก Component, การส่ง Props, การนำ Component กลับมาใช้ซ้ำ (Navbar, Footer, ProductCard, CartDrawer, etc.)
- * 4. State & Event:
- *    - useState, useEffect, onClick, onChange, Form Submit, Multi-checkbox, Cart quantity, Slide-over Drawer
- * 5. Responsive Design:
- *    - Tailwind CSS รองรับ Desktop, Tablet, และ Mobile ครบทุกหน้า
- * 6. Form:
- *    - การสร้างแบบฟอร์ม, การรับข้อมูล, Form Submit, Validation
- * 7. React Hook Form (RHF):
- *    - useForm, register, handleSubmit, errors
- * 8. Zod:
- *    - Schema Validation ตรวจสอบความถูกต้องของข้อมูล (checkoutSchema, productFormSchema)
- * 9. CRUD:
- *    - Create (เพิ่มสินค้า), Read (ดูสินค้า), Update (แก้ไข), Delete (ลบสินค้า)
- * 10. API:
- *    - RESTful Endpoints (GET, POST, PUT, DELETE /api/products, /api/orders, /api/auth/google)
+ * 1. JavaScript      : ตัวแปร, ฟังก์ชัน, Object, Array Methods (.filter, .map, .reduce, .find)
+ * 2. Routing / Pages : แบ่งหน้าเว็บ + Dynamic Route /product/:id ด้วย Browser History API
+ * 3. Components      : Navbar, Footer, ProductCard, CartDrawer, LoginModal, UI primitives
+ * 4. State & Event   : useState, useEffect, Context (Cart, Wishlist, Auth, Theme, Language)
+ * 5. Responsive      : Tailwind CSS ทุกหน้า + Bottom Tab Bar บนมือถือ
+ * 6. Form            : Checkout, Product Form, Review Form
+ * 7. React Hook Form : useForm, register, handleSubmit, errors
+ * 8. Zod             : checkoutSchema, productFormSchema (ใช้ทั้งหน้าเว็บและ API)
+ * 9. CRUD            : เพิ่ม / ดู / แก้ไข / ลบ สินค้า + คลังรูปภาพ (SQLite)
+ * 10. API            : REST API + Google Sign-In + สิทธิ์ admin / customer
  * ============================================================================
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
+import { I18nProvider, useI18n } from './i18n';
 import { useAppRouter } from './hooks/useAppRouter';
 import { fetchProducts } from './services/api';
-import { Product } from './types';
+import type { Product } from './types';
 import { INITIAL_PRODUCTS } from './data/products';
 
-// Components
-import { Navbar } from './components/Navbar';
+import { Navbar, MobileTabBar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { CartDrawer } from './components/CartDrawer';
+import { LoginModal } from './components/LoginModal';
+import { Button, EmptyState } from './components/ui';
 
-// Pages
 import { HomePage } from './pages/HomePage';
 import { ShopPage } from './pages/ShopPage';
 import { CraftBraceletPage } from './pages/CraftBraceletPage';
@@ -49,205 +41,147 @@ import { FindYourBraceletPage } from './pages/FindYourBraceletPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
 import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
-import { OrdersPage } from './pages/OrdersPage';
+import { AccountPage } from './pages/AccountPage';
 import { WishlistPage } from './pages/WishlistPage';
-import { AdminProductPage } from './pages/AdminProductPage';
+import { AdminPage } from './pages/admin/AdminPage';
 import { StonesGuidePage } from './pages/StonesGuidePage';
+import { Compass } from 'lucide-react';
 
 function MainAppContent() {
   const router = useAppRouter();
+  const { user, openLogin } = useAuth();
+  const { t } = useI18n();
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
-  // [โมดูล 10: API] โหลดข้อมูลสินค้าจาก REST API ตอนเริ่มต้น
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const data = await fetchProducts();
-        if (data && data.length > 0) {
-          setProducts(data);
-        }
-      } catch (err) {
-        console.warn('Using initial product data fallback:', err);
-      }
+  // [โมดูล 10: API] โหลดข้อมูลสินค้าจาก REST API (ฐานข้อมูล SQLite)
+  const reloadProducts = useCallback(async () => {
+    try {
+      setProducts(await fetchProducts());
+    } catch (err) {
+      console.warn('Using initial product data fallback:', err);
+    } finally {
+      setProductsLoading(false);
     }
-    loadData();
   }, []);
 
-  // Handlers สำหรับการเปลี่ยนหน้า
-  const handleNavigate = (url: string) => {
-    router.push(url);
+  useEffect(() => {
+    reloadProducts();
+  }, [reloadProducts]);
+
+  const navigate = router.push;
+  const viewProduct = (id: string) => navigate(`/product/${encodeURIComponent(id)}`);
+
+  // Checkout ต้องล็อกอินด้วย Google ก่อน — ถ้ายังไม่ล็อกอินจะเปิดหน้าต่างล็อกอิน แล้วไปต่อให้อัตโนมัติ
+  const goCheckout = () => {
+    if (user) navigate('/checkout');
+    else openLogin(() => navigate('/checkout'));
   };
 
-  const handleViewProduct = (productId: string) => {
-    router.push(`/product/${productId}`);
-  };
-
-  const handleSelectStoneForShop = (stoneName: string) => {
-    router.push(`/shop?q=${encodeURIComponent(stoneName)}`);
-  };
-
-  // ดึงสินค้าชิ้นที่กำลังดู (กรณี Dynamic Route /product/:id)
-  const currentDetailProduct = router.params.id
-    ? products.find((p) => p.id === router.params.id) || null
-    : null;
-
-  // [โมดูล 2: Next.js Routing / Pages] เรนเดอร์หน้าตาม URL
-  const renderCurrentPage = () => {
+  const renderPage = () => {
     switch (router.page) {
       case 'home':
-        return (
-          <HomePage
-            products={products}
-            onNavigate={handleNavigate}
-            onViewProduct={handleViewProduct}
-          />
-        );
-
+        return <HomePage products={products} loading={productsLoading} onNavigate={navigate} onViewProduct={viewProduct} />;
       case 'shop':
         return (
           <ShopPage
+            key={router.query.toString()}
             products={products}
-            onViewProduct={handleViewProduct}
+            loading={productsLoading}
+            onViewProduct={viewProduct}
             initialIntention={router.query.get('intention')}
+            initialQuery={router.query.get('q')}
           />
         );
-
       case 'craft':
-        return (
-          <CraftBraceletPage
-            onNavigate={handleNavigate}
-          />
-        );
-
+        return <CraftBraceletPage onOpenCart={() => setIsCartOpen(true)} />;
       case 'find':
-        return (
-          <FindYourBraceletPage
-            products={products}
-            onViewProduct={handleViewProduct}
-          />
-        );
-
-      case 'product-detail':
-        if (!currentDetailProduct) {
-          return (
-            <div className="max-w-xl mx-auto py-20 text-center space-y-4">
-              <h2 className="font-serif text-2xl font-bold text-[#2D2420]">
-                ไม่พบข้อมูลสินค้าที่ระบุ
-              </h2>
-              <button
-                onClick={() => handleNavigate('/shop')}
-                className="px-6 py-2.5 rounded-full bg-[#4E3C34] text-white text-sm font-semibold"
-              >
-                กลับไปหน้าร้านค้า
-              </button>
-            </div>
+        return <FindYourBraceletPage products={products} onViewProduct={viewProduct} />;
+      case 'stones':
+        return <StonesGuidePage onNavigate={navigate} />;
+      case 'product-detail': {
+        const product = products.find((p) => p.id === router.productId);
+        if (!product) {
+          return productsLoading ? null : (
+            <NotFound title={t('product.notFound')} onBack={() => navigate('/shop')} backLabel={t('common.backToShop')} />
           );
         }
         return (
           <ProductDetailPage
-            product={currentDetailProduct}
-            onBack={() => handleNavigate('/shop')}
-            onViewProduct={handleViewProduct}
+            key={product.id}
+            product={product}
+            products={products}
+            onNavigate={navigate}
+            onViewProduct={viewProduct}
+            onOpenCart={() => setIsCartOpen(true)}
           />
         );
-
+      }
       case 'cart':
-        return (
-          <CartPage
-            onNavigate={handleNavigate}
-            onViewProduct={handleViewProduct}
-          />
-        );
-
+        return <CartPage onNavigate={navigate} onViewProduct={viewProduct} onCheckout={goCheckout} />;
       case 'checkout':
-        return (
-          <CheckoutPage
-            onNavigate={handleNavigate}
-            onViewProduct={handleViewProduct}
-          />
-        );
-
-      case 'orders':
-        return (
-          <OrdersPage
-            onNavigate={handleNavigate}
-            onViewProduct={handleViewProduct}
-          />
-        );
-
+        return <CheckoutPage onNavigate={navigate} onOrderPlaced={reloadProducts} />;
+      case 'account':
+        return <AccountPage onNavigate={navigate} onViewProduct={viewProduct} />;
       case 'wishlist':
-        return (
-          <WishlistPage
-            onNavigate={handleNavigate}
-            onViewProduct={handleViewProduct}
-          />
-        );
-
+        return <WishlistPage onNavigate={navigate} onViewProduct={viewProduct} />;
       case 'admin':
         return (
-          <AdminProductPage
+          <AdminPage
+            section={router.adminSection}
             products={products}
             onProductsChange={setProducts}
-            onViewProduct={handleViewProduct}
+            onNavigate={navigate}
+            onViewProduct={viewProduct}
           />
         );
-
-      case 'stones':
-        return (
-          <StonesGuidePage
-            onSelectStoneForShop={handleSelectStoneForShop}
-            onNavigate={handleNavigate}
-          />
-        );
-
       default:
-        return (
-          <HomePage
-            products={products}
-            onNavigate={handleNavigate}
-            onViewProduct={handleViewProduct}
-          />
-        );
+        return <NotFound title={t('notFound.title')} onBack={() => navigate('/')} backLabel={t('common.backHome')} />;
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF8F5] text-[#2D2420]">
-      {/* Navbar ใช้รูปแบบเดียวกันทุกหน้า */}
-      <Navbar
-        currentPath={router.pathname}
-        onNavigate={handleNavigate}
-        onOpenCart={() => setIsCartOpen(true)}
-      />
+    <div className="min-h-screen flex flex-col bg-bg text-ink">
+      <Navbar currentPath={router.pathname} onNavigate={navigate} onOpenCart={() => setIsCartOpen(true)} />
 
-      {/* Main Page Content */}
-      <main className="flex-1">
-        {renderCurrentPage()}
-      </main>
+      <main className="flex-1 pb-16 lg:pb-0">{renderPage()}</main>
 
-      {/* Slide-over Quick Cart Drawer */}
+      {router.page !== 'admin' && <Footer onNavigate={navigate} />}
+      <MobileTabBar currentPath={router.pathname} onNavigate={navigate} />
+
       <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
-        onNavigate={handleNavigate}
-        onViewProduct={handleViewProduct}
+        onNavigate={navigate}
+        onCheckout={goCheckout}
+        onViewProduct={viewProduct}
       />
-
-      {/* Footer ใช้รูปแบบเดียวกันทุกหน้า */}
-      <Footer onNavigate={handleNavigate} />
+      <LoginModal />
     </div>
   );
 }
 
+const NotFound: React.FC<{ title: string; onBack: () => void; backLabel: string }> = ({ title, onBack, backLabel }) => (
+  <div className="px-4 py-20">
+    <EmptyState icon={<Compass className="w-7 h-7" />} title={title} action={<Button onClick={onBack}>{backLabel}</Button>} />
+  </div>
+);
+
 export default function App() {
   return (
-    <AuthProvider>
-      <WishlistProvider>
-        <CartProvider>
-          <MainAppContent />
-        </CartProvider>
-      </WishlistProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <WishlistProvider>
+              <CartProvider>
+                <MainAppContent />
+              </CartProvider>
+            </WishlistProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>
+    </ThemeProvider>
   );
 }

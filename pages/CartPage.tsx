@@ -4,171 +4,128 @@
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 4: State & Event (Cart Context Management)]
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 5: Responsive Design]
  *
- * แสดงรายการสินค้าในตะกร้า:
- * - รูป, ชื่อ, ราคา, ขนาดข้อมือที่เลือก, จำนวน (+/-)
- * - ปุ่มลบออกจากตะกร้า
- * - ยอดรวมสินค้า (Subtotal)
- * - ค่าจัดส่ง (Shipping Fee - ฟรีเมื่อยอดครบ 500 บาท)
- * - ยอดชำระสุทธิ (Total)
- * - ปุ่ม Checkout นำทางไปยังหน้าชำระเงิน
+ * - เลือกสินค้า / ปรับจำนวน / ลบ ได้โดยไม่ต้องล็อกอิน (ลบ / ล้างตะกร้า มีหน้าต่างยืนยันก่อน)
+ * - ปุ่ม Checkout: ถ้ายังไม่ล็อกอินจะให้ล็อกอินด้วย Google ก่อน
  * ============================================================================
  */
 
-import React from 'react';
-import { ShoppingBag, ArrowRight, ArrowLeft, Trash2, ShieldCheck, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, ArrowRight, Lock, ShieldCheck, ShoppingBag, Trash2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
-import { CartItem } from '../components/CartItem';
+import { useAuth } from '../context/AuthContext';
+import { CartLine, FreeShippingProgress } from '../components/CartDrawer';
+import { Button, ConfirmDialog, Container, EmptyState, PageHeader } from '../components/ui';
+import { useI18n } from '../i18n';
 
 interface CartPageProps {
   onNavigate: (url: string) => void;
   onViewProduct: (id: string) => void;
+  onCheckout: () => void;
 }
 
-export const CartPage: React.FC<CartPageProps> = ({ onNavigate, onViewProduct }) => {
+export const CartPage: React.FC<CartPageProps> = ({ onNavigate, onViewProduct, onCheckout }) => {
   const { cart, clearCart, subtotal, shippingFee, total, cartCount } = useCart();
+  const { user } = useAuth();
+  const [confirmClear, setConfirmClear] = useState(false);
+  const { t, price } = useI18n();
 
   if (cart.length === 0) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-20 text-center space-y-6">
-        <div className="w-24 h-24 mx-auto rounded-full bg-[#F5EFE6] text-[#8C7063] flex items-center justify-center">
-          <ShoppingBag className="w-10 h-10 text-[#C6A24D]" />
-        </div>
-        <div className="space-y-2">
-          <h2 className="font-brand text-2xl sm:text-3xl font-bold text-[#3E2723]">
-            ตะกร้าสินค้าของคุณยังว่างอยู่
-          </h2>
-          <p className="text-sm sm:text-base text-[#8C7063] max-w-md mx-auto">
-            คุณยังไม่มีกำไลหินมงคลในตะกร้า เริ่มต้นค้นหากำไลเส้นโปรดที่เหมาะกับคุณได้เลย
-          </p>
-        </div>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-          <button
-            type="button"
-            onClick={() => onNavigate('/shop')}
-            className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#8C5258] hover:bg-[#734045] text-white font-semibold text-base transition-all shadow-md"
-          >
-            ไปหน้าร้านค้า (Shop)
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('/find')}
-            className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-white border border-[#E8C5C8] text-[#4A3E3D] font-semibold text-base transition-all hover:bg-[#FAF7F2]"
-          >
-            ค้นหากำไลที่เหมาะกับคุณ
-          </button>
-        </div>
-      </div>
+      <Container className="py-16 sm:py-24">
+        <EmptyState
+          icon={<ShoppingBag className="w-7 h-7" />}
+          title={t('cart.emptyTitle')}
+          description={t('cart.emptyDesc')}
+          action={
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button onClick={() => onNavigate('/shop')}>{t('cart.browse')}</Button>
+              <Button variant="secondary" onClick={() => onNavigate('/find')}>
+                {t('home.ctaFind')}
+              </Button>
+            </div>
+          }
+        />
+      </Container>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
-      {/* Title Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E8C5C8]/40">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#8C5258]">
-            <Sparkles className="w-4 h-4 text-[#C6A24D]" />
-            <span>YOUR SHOPPING BAG</span>
-          </div>
-          <h1 className="font-brand text-3xl sm:text-4xl font-bold text-[#3E2723] mt-1">
-            ตะกร้าสินค้า ({cartCount} รายการ)
-          </h1>
-        </div>
+    <Container className="py-10 sm:py-14 space-y-8">
+      <PageHeader
+        eyebrow={t('cart.eyebrow')}
+        title={t('cart.title')}
+        subtitle={t('cart.itemCount', { count: cartCount })}
+        action={
+          <Button variant="ghost" size="sm" onClick={() => setConfirmClear(true)} className="self-start sm:self-auto hover:text-danger">
+            <Trash2 className="w-4 h-4" />
+            {t('cart.clear')}
+          </Button>
+        }
+      />
 
-        <button
-          type="button"
-          onClick={clearCart}
-          className="text-xs text-[#9E8B84] hover:text-rose-600 flex items-center gap-1.5 self-start sm:self-auto font-medium transition-colors"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>ล้างตะกร้าทั้งหมด</span>
-        </button>
-      </div>
-
-      {/* Main Cart Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
-        {/* Cart Item List */}
+      <div className="grid lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-8 space-y-4">
-          {cart.map((item) => (
-            <CartItem
-              key={`${item.product.id}-${item.selectedSize}`}
-              item={item}
-              onViewProduct={onViewProduct}
-            />
-          ))}
-
-          {/* Continue Shopping Link */}
-          <div className="pt-4">
-            <button
-              type="button"
-              onClick={() => onNavigate('/shop')}
-              className="inline-flex items-center gap-2 text-sm font-semibold text-[#8C5258] hover:text-[#5C2E33]"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>เลือกชมกำไลเส้นอื่นเพิ่มเติม</span>
-            </button>
+          <div className="card divide-y divide-line">
+            {cart.map((item) => (
+              <div key={`${item.product.id}-${item.selectedSize}`} className="p-4 sm:p-6">
+                <CartLine item={item} onViewProduct={onViewProduct} large />
+              </div>
+            ))}
           </div>
-        </div>
-
-        {/* Order Summary Box */}
-        <div className="lg:col-span-4 bg-white rounded-3xl p-6 sm:p-8 border border-[#E8C5C8]/50 shadow-md space-y-6 sticky top-28">
-          <h3 className="font-serif text-2xl font-bold text-[#3E2723] pb-3 border-b border-[#F2EBE1]">
-            สรุปยอดคำสั่งซื้อ
-          </h3>
-
-          <div className="space-y-3.5 text-base">
-            <div className="flex justify-between text-[#5C4D4A]">
-              <span>ยอดรวมสินค้า ({cartCount} เส้น):</span>
-              <span className="font-semibold text-[#3E2723]">฿{subtotal.toLocaleString()}</span>
-            </div>
-
-            <div className="flex justify-between text-[#5C4D4A]">
-              <span>ค่าจัดส่ง:</span>
-              <span>
-                {shippingFee === 0 ? (
-                  <span className="text-emerald-700 font-semibold bg-emerald-50 px-2.5 py-1 rounded-md text-sm">
-                    ฟรีค่าจัดส่ง
-                  </span>
-                ) : (
-                  <span className="font-semibold text-[#3E2723]">฿{shippingFee}</span>
-                )}
-              </span>
-            </div>
-
-            {subtotal < 500 && (
-              <p className="text-sm text-[#C6A24D] bg-[#FAF4ED] p-3 rounded-xl border border-[#E8C5C8]/30">
-                💡 ซื้อเพิ่มอีก <strong>฿{(500 - subtotal).toLocaleString()}</strong> เพื่อรับสิทธิ์จัดส่งฟรีทั่วประเทศ!
-              </p>
-            )}
-
-            <div className="pt-3.5 border-t border-[#F2EBE1] flex justify-between items-baseline text-[#3E2723]">
-              <span className="font-bold text-lg">ยอดชำระสุทธิ:</span>
-              <span className="font-bold text-3xl text-[#8C5258]">
-                ฿{total.toLocaleString()}
-              </span>
-            </div>
-          </div>
-
-          {/* Checkout Button */}
           <button
             type="button"
-            onClick={() => onNavigate('/checkout')}
-            className="w-full py-4.5 rounded-full bg-[#8C5258] hover:bg-[#734045] text-white font-bold text-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2.5 active:scale-95"
+            onClick={() => onNavigate('/shop')}
+            className="inline-flex items-center gap-2 text-sm text-ink-2 hover:text-ink"
           >
-            <span>ดำเนินการสั่งซื้อ (Checkout)</span>
-            <ArrowRight className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
+            {t('cart.continue')}
           </button>
-
-          {/* Guarantee Badges */}
-          <div className="pt-2 text-center text-xs sm:text-sm text-[#8C7063] space-y-1">
-            <p className="flex items-center justify-center gap-1.5 font-medium text-[#4A3E3D]">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>ชำระเงินปลอดภัย 100% พร้อมรับประกันสินค้า</span>
-            </p>
-            <p>แพ็กเกจกล่องหรูหราพร้อมการ์ดความหมายหินทุกเส้น</p>
-          </div>
         </div>
+
+        <aside className="lg:col-span-4 lg:sticky lg:top-28 card p-6 space-y-5">
+          <h2 className="text-xl text-ink">{t('cart.summary')}</h2>
+          <FreeShippingProgress subtotal={subtotal} />
+          <dl className="space-y-2.5 text-sm">
+            <div className="flex justify-between text-ink-2">
+              <dt>{t('cart.subtotal')}</dt>
+              <dd className="text-ink tabular-nums">{price(subtotal)}</dd>
+            </div>
+            <div className="flex justify-between text-ink-2">
+              <dt>{t('cart.shipping')}</dt>
+              <dd className={shippingFee === 0 ? 'text-success' : 'text-ink tabular-nums'}>
+                {shippingFee === 0 ? t('cart.free') : price(shippingFee)}
+              </dd>
+            </div>
+            <div className="flex justify-between items-baseline pt-3 border-t border-line">
+              <dt className="font-medium text-ink">{t('cart.total')}</dt>
+              <dd className="text-2xl font-semibold text-ink tabular-nums">{price(total)}</dd>
+            </div>
+          </dl>
+          <Button size="lg" block onClick={onCheckout}>
+            {!user && <Lock className="w-4 h-4" />}
+            {t('cart.checkout')}
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+          {!user && <p className="text-xs text-center text-ink-3 -mt-2">{t('cart.loginHint')}</p>}
+          <p className="flex items-center justify-center gap-1.5 text-xs text-ink-3">
+            <ShieldCheck className="w-4 h-4 text-success" />
+            {t('cart.secure')}
+          </p>
+        </aside>
       </div>
-    </div>
+      <ConfirmDialog
+        open={confirmClear}
+        title={t('cart.clearTitle')}
+        message={t('cart.clearConfirm', { count: cartCount })}
+        confirmLabel={t('cart.clear')}
+        cancelLabel={t('common.cancel')}
+        closeLabel={t('common.close')}
+        onClose={() => setConfirmClear(false)}
+        onConfirm={() => {
+          setConfirmClear(false);
+          clearCart();
+        }}
+      />
+    </Container>
   );
 };

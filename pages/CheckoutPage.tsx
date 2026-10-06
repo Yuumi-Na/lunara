@@ -6,499 +6,314 @@
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 8: Zod Schema Validation (checkoutSchema)]
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 10: API (POST /api/orders)]
  *
- * ฟิลด์ข้อมูลในแบบฟอร์ม:
- * 1. Full name (ชื่อ-นามสกุล)
- * 2. Phone (เบอร์โทรศัพท์)
- * 3. Address (ที่อยู่จัดส่ง)
- * 4. Province (จังหวัด)
- * 5. District (เขต / อำเภอ)
- * 6. Postal code (รหัสไปรษณีย์ 5 หลัก)
- * 7. Payment method (ช่องทางชำระเงิน เช่น พร้อมเพย์, บัตรเครดิต, เก็บเงินปลายทาง)
+ * - ต้องล็อกอินด้วย Google ก่อนเท่านั้น (ทั้งหน้าเว็บ และ API ฝั่งเซิร์ฟเวอร์ตรวจซ้ำ)
+ * - ราคาสุทธิคำนวณใหม่ที่เซิร์ฟเวอร์จากฐานข้อมูล ไม่เชื่อราคาจากเบราว์เซอร์
  * ============================================================================
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { checkoutSchema, CheckoutFormValues, Order } from '../types';
+import { ArrowLeft, CheckCircle2, CreditCard, Lock, QrCode, ShieldCheck, Truck } from 'lucide-react';
+import { checkoutSchema, type CheckoutFormValues, type Order, type PaymentMethod } from '../types';
 import { useCart } from '../context/CartContext';
-import { createOrder } from '../services/api';
-import { CheckCircle2, ShieldCheck, QrCode, CreditCard, Truck, ArrowLeft, ArrowRight, Sparkles } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { ApiError, createOrder } from '../services/api';
+import { ProductImage } from '../components/ProductCard';
+import { GoogleSignInButton } from '../components/LoginModal';
+import { Badge, Button, Container, cx, EmptyState, Field, Input, PageHeader, Spinner, Textarea } from '../components/ui';
+import { useI18n, type TKey } from '../i18n';
+import { useContent } from '../i18n/content';
 
 interface CheckoutPageProps {
   onNavigate: (url: string) => void;
-  onViewProduct: (id: string) => void;
+  onOrderPlaced: () => void;
 }
 
-export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate }) => {
-  const { cart, subtotal, shippingFee, total, clearCart } = useCart();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
+const PAYMENTS: { id: PaymentMethod; icon: React.FC<{ className?: string }>; desc: TKey }[] = [
+  { id: 'promptpay', icon: QrCode, desc: 'pay.promptpayDesc' },
+  { id: 'credit_card', icon: CreditCard, desc: 'pay.credit_cardDesc' },
+  { id: 'cod', icon: Truck, desc: 'pay.codDesc' },
+];
 
-  // 1. [React Hook Form + Zod]
+export const CheckoutPage: React.FC<CheckoutPageProps> = ({ onNavigate, onOrderPlaced }) => {
+  const { cart, subtotal, shippingFee, total, clearCart, removeFromCart } = useCart();
+  const { user, isLoading } = useAuth();
+  const toast = useToast();
+  const { t, tk, price } = useI18n();
+  const content = useContent();
+  const [submitting, setSubmitting] = useState(false);
+  const [completed, setCompleted] = useState<Order | null>(null);
+
   const {
     register,
     handleSubmit,
     watch,
+    getValues,
+    setValue,
     formState: { errors },
   } = useForm<CheckoutFormValues>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
-      fullName: '',
+      fullName: user?.name ?? '',
       phone: '',
       address: '',
-      province: 'กรุงเทพมหานคร',
+      province: '',
       district: '',
       postalCode: '',
       paymentMethod: 'promptpay',
     },
   });
 
-  const selectedPayment = watch('paymentMethod');
+  const payment = watch('paymentMethod');
 
-  // 2. [Form Submit Event]
-  const onFormSubmit = async (values: CheckoutFormValues) => {
-    if (cart.length === 0) {
-      alert('ไม่มีสินค้าในตะกร้า');
-      return;
-    }
+  // ล็อกอินจากหน้านี้แล้ว -> เติมชื่อจากบัญชี Google ให้อัตโนมัติ
+  useEffect(() => {
+    if (user && !getValues('fullName')) setValue('fullName', user.name);
+  }, [user, getValues, setValue]);
 
-    setIsSubmitting(true);
+  const onSubmit = async (values: CheckoutFormValues) => {
+    setSubmitting(true);
     try {
-      const paymentLabels: Record<string, string> = {
-        promptpay: 'พร้อมเพย์ (PromptPay QR Code)',
-        credit_card: 'บัตรเครดิต / เดบิต',
-        cod: 'เก็บเงินปลายทาง (Cash on Delivery)',
-      };
-
-      const newOrder = await createOrder({
-        customerName: values.fullName,
-        phone: values.phone,
-        address: values.address,
-        province: values.province,
-        district: values.district,
-        postalCode: values.postalCode,
-        paymentMethod: paymentLabels[values.paymentMethod] || values.paymentMethod,
-        items: cart,
-        subtotal,
-        shippingFee,
-        total,
-        status: 'Ordered',
-      });
-
-      // ล้างตะกร้าสินค้าหลังจากสั่งซื้อสำเร็จ
+      const order = await createOrder(values, cart);
       clearCart();
-      setCompletedOrder(newOrder);
+      setCompleted(order);
+      onOrderPlaced();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      console.error('Order creation failed:', err);
-      alert('เกิดข้อผิดพลาดในการบันทึกคำสั่งซื้อ กรุณาลองใหม่อีกครั้ง');
+      if (err instanceof ApiError && err.code === 'OUT_OF_STOCK') {
+        toast(t('checkout.outOfStock'), 'error');
+      } else if (err instanceof ApiError && err.code === 'NOT_FOUND' && err.productId) {
+        removeFromCart(err.productId, cart.find((c) => c.product.id === err.productId)?.selectedSize ?? '');
+        toast(t('checkout.productGone'), 'error');
+      } else if (err instanceof ApiError && err.status === 401) {
+        toast(t('checkout.sessionExpired'), 'error');
+      } else {
+        toast(t('checkout.failed'), 'error');
+      }
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   };
 
-  // --------------------------------------------------------------------------
-  // ORDER SUCCESS STATE
-  // --------------------------------------------------------------------------
-  if (completedOrder) {
+  // ---------------------------------------------------------------- success
+  if (completed) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-16 text-center space-y-6">
-        <div className="w-20 h-20 mx-auto rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center animate-in zoom-in">
-          <CheckCircle2 className="w-10 h-10" />
-        </div>
-
-        <div className="space-y-2">
-          <span className="text-xs uppercase tracking-widest text-[#8C5258] font-bold">
-            ORDER CONFIRMED
-          </span>
-          <h2 className="font-brand text-3xl font-bold text-[#3E2723]">
-            สั่งซื้อสำเร็จเรียบร้อยแล้ว!
-          </h2>
-          <p className="text-sm text-[#8C7063]">
-            ขอบคุณที่ไว้วางใจร้านกำไลหินมงคล <strong>LUNARA</strong> ทางร้านกำลังจัดเตรียมสินค้าด้วยความประณีต
-          </p>
-        </div>
-
-        {/* Order Details Card */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E8C5C8]/50 shadow-md text-left space-y-4">
-          <div className="flex justify-between items-center pb-3 border-b border-[#F2EBE1]">
-            <span className="text-xs font-semibold text-[#8C7063]">รหัสคำสั่งซื้อ:</span>
-            <span className="text-sm font-bold text-[#8C5258] font-mono">
-              {completedOrder.id}
-            </span>
+      <Container narrow className="py-14 sm:py-20">
+        <div className="max-w-xl mx-auto text-center space-y-6 animate-fade-up">
+          <div className="w-20 h-20 mx-auto rounded-full bg-success-soft text-success flex items-center justify-center">
+            <CheckCircle2 className="w-10 h-10" />
           </div>
-
-          <div className="text-xs sm:text-sm text-[#4A3E3D] space-y-2">
-            <p><strong>ผู้สั่งซื้อ:</strong> {completedOrder.customerName} ({completedOrder.phone})</p>
-            <p><strong>ที่อยู่จัดส่ง:</strong> {completedOrder.address} เขต/อำเภอ {completedOrder.district} {completedOrder.province} {completedOrder.postalCode}</p>
-            <p><strong>วิธีชำระเงิน:</strong> {completedOrder.paymentMethod}</p>
-            <p><strong>สถานะคำสั่งซื้อ:</strong> <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">{completedOrder.status}</span></p>
+          <div className="space-y-2">
+            <p className="eyebrow">{t('checkout.successEyebrow')}</p>
+            <h1 className="text-3xl sm:text-4xl text-ink">{t('checkout.successTitle')}</h1>
+            <p className="text-ink-2">{t('checkout.successDesc')}</p>
           </div>
-
-          <div className="pt-3 border-t border-[#F2EBE1] flex justify-between items-center">
-            <span className="font-bold text-sm text-[#3E2723]">ยอดชำระทั้งสิ้น:</span>
-            <span className="text-xl font-bold text-[#8C5258]">
-              ฿{completedOrder.total.toLocaleString()}
-            </span>
-          </div>
-
-          {/* QR Code prompt for PromptPay */}
-          {completedOrder.paymentMethod.includes('พร้อมเพย์') && (
-            <div className="p-4 bg-[#FAF7F2] rounded-2xl border border-[#D9C8BE] text-center space-y-2">
-              <p className="text-xs font-bold text-[#3E2723]">สแกนเพื่อชำระเงินด้วย PromptPay QR</p>
-              <div className="w-36 h-36 mx-auto bg-white p-2 rounded-xl border border-gray-200 flex items-center justify-center">
-                <QrCode className="w-28 h-28 text-[#4A3E3D]" />
-              </div>
-              <p className="text-[11px] text-[#8C7063]">
-                ชื่อบัญชี: บจก. ลูนาร่า กำไลหินมงคล • ยอด ฿{completedOrder.total.toLocaleString()}
-              </p>
+          <div className="card p-6 text-left space-y-3 text-sm">
+            <Row label={t('order.id')} value={<span className="font-mono font-semibold">{completed.id}</span>} />
+            <Row label={t('order.recipient')} value={`${completed.customerName} · ${completed.phone}`} />
+            <Row
+              label={t('order.address')}
+              value={`${completed.address}, ${completed.district}, ${completed.province} ${completed.postalCode}`}
+            />
+            <Row label={t('order.payment')} value={content.payment(completed.paymentMethod)} />
+            <Row label={t('order.status')} value={<Badge tone="info">{content.status(completed.status)}</Badge>} />
+            <div className="flex justify-between items-baseline pt-3 border-t border-line">
+              <span className="font-medium text-ink">{t('cart.total')}</span>
+              <span className="text-2xl font-semibold text-ink tabular-nums">{price(completed.total)}</span>
             </div>
-          )}
+            {completed.paymentMethod === 'promptpay' && (
+              <div className="rounded-2xl bg-surface-2 p-5 text-center space-y-2 mt-2">
+                <p className="text-sm font-medium text-ink">{t('checkout.scanToPay')}</p>
+                <div className="w-36 h-36 mx-auto bg-white rounded-xl p-3 flex items-center justify-center">
+                  <QrCode className="w-full h-full text-black" />
+                </div>
+                <p className="text-xs text-ink-3">{t('checkout.payTo', { amount: price(completed.total) })}</p>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button onClick={() => onNavigate('/account')}>{t('checkout.viewOrders')}</Button>
+            <Button variant="secondary" onClick={() => onNavigate('/shop')}>
+              {t('cart.continue')}
+            </Button>
+          </div>
         </div>
+      </Container>
+    );
+  }
 
-        {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-          <button
-            type="button"
-            onClick={() => onNavigate('/orders')}
-            className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-[#8C5258] hover:bg-[#734045] text-white font-semibold text-sm transition-all shadow-md"
-          >
-            ดูประวัติคำสั่งซื้อทั้งหมด
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('/')}
-            className="w-full sm:w-auto px-8 py-3.5 rounded-full bg-white border border-[#E8C5C8] text-[#4A3E3D] font-semibold text-sm transition-all hover:bg-[#FAF7F2]"
-          >
-            กลับสู่หน้าแรก
-          </button>
-        </div>
+  // ---------------------------------------------------------------- login gate
+  if (isLoading) {
+    return (
+      <div className="py-24 flex justify-center">
+        <Spinner />
       </div>
     );
   }
 
-  // Redirect or show empty state if cart empty
+  if (!user) {
+    return (
+      <Container className="py-16 sm:py-24">
+        <div className="card max-w-md mx-auto p-8 text-center space-y-5">
+          <div className="w-14 h-14 mx-auto rounded-full bg-gold-soft text-gold flex items-center justify-center">
+            <Lock className="w-6 h-6" />
+          </div>
+          <h1 className="text-2xl text-ink">{t('checkout.loginTitle')}</h1>
+          <p className="text-sm text-ink-2">{t('checkout.loginDesc')}</p>
+          <GoogleSignInButton />
+          <button type="button" onClick={() => onNavigate('/cart')} className="text-sm text-ink-3 hover:text-ink">
+            ← {t('checkout.backToCart')}
+          </button>
+        </div>
+      </Container>
+    );
+  }
+
   if (cart.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center space-y-4">
-        <h2 className="font-brand text-2xl font-bold text-[#3E2723]">
-          ไม่มีสินค้าสำหรับสั่งซื้อ
-        </h2>
-        <p className="text-sm text-[#8C7063]">
-          กรุณาเลือกสินค้าลงตะกร้าก่อนดำเนินการชำระเงิน
-        </p>
-        <button
-          onClick={() => onNavigate('/shop')}
-          className="px-6 py-2.5 rounded-full bg-[#8C5258] text-white text-sm font-semibold"
-        >
-          ไปหน้าร้านค้า
-        </button>
-      </div>
+      <Container className="py-16 sm:py-24">
+        <EmptyState
+          icon={<Truck className="w-7 h-7" />}
+          title={t('checkout.emptyTitle')}
+          description={t('checkout.emptyDesc')}
+          action={<Button onClick={() => onNavigate('/shop')}>{t('cart.browse')}</Button>}
+        />
+      </Container>
     );
   }
 
+  // ---------------------------------------------------------------- form
+  const err = (key: keyof CheckoutFormValues) => tk(errors[key]?.message);
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-8">
-      {/* Back button */}
-      <button
-        type="button"
-        onClick={() => onNavigate('/cart')}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-[#8C5258] hover:text-[#5C2E33]"
-      >
+    <Container className="py-10 sm:py-14 space-y-8">
+      <button type="button" onClick={() => onNavigate('/cart')} className="inline-flex items-center gap-2 text-sm text-ink-2 hover:text-ink">
         <ArrowLeft className="w-4 h-4" />
-        <span>กลับไปที่ตะกร้าสินค้า</span>
+        {t('checkout.backToCart')}
       </button>
+      <PageHeader eyebrow={t('checkout.eyebrow')} title={t('checkout.title')} />
 
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#8C5258]">
-          <Sparkles className="w-4 h-4 text-[#C6A24D]" />
-          <span>CHECKOUT PROCESS</span>
-        </div>
-        <h1 className="font-brand text-3xl sm:text-4xl font-bold text-[#3E2723] mt-1">
-          กรอกข้อมูลจัดส่งและชำระเงิน
-        </h1>
-        <p className="text-sm text-[#8C7063]">
-          ระบบตรวจสอบความถูกต้องด้วย React Hook Form และ Zod Validation
-        </p>
+      <div className="grid lg:grid-cols-12 gap-8 items-start">
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="lg:col-span-7 space-y-6">
+          <Section n={1} title={t('checkout.contact')}>
+            <div className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-ink-2 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-success shrink-0" />
+              {t('checkout.signedInAs', { email: user.email })}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Field label={t('checkout.fullName')} required error={err('fullName')} htmlFor="fullName">
+                <Input id="fullName" autoComplete="name" aria-invalid={!!errors.fullName} {...register('fullName')} />
+              </Field>
+              <Field label={t('checkout.phone')} required error={err('phone')} htmlFor="phone">
+                <Input id="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="0812345678" aria-invalid={!!errors.phone} {...register('phone')} />
+              </Field>
+            </div>
+          </Section>
+
+          <Section n={2} title={t('checkout.shippingAddress')}>
+            <Field label={t('checkout.address')} required error={err('address')} htmlFor="address">
+              <Textarea id="address" rows={2} autoComplete="street-address" aria-invalid={!!errors.address} {...register('address')} />
+            </Field>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <Field label={t('checkout.district')} required error={err('district')} htmlFor="district">
+                <Input id="district" aria-invalid={!!errors.district} {...register('district')} />
+              </Field>
+              <Field label={t('checkout.province')} required error={err('province')} htmlFor="province">
+                <Input id="province" autoComplete="address-level1" aria-invalid={!!errors.province} {...register('province')} />
+              </Field>
+              <Field label={t('checkout.postalCode')} required error={err('postalCode')} htmlFor="postalCode">
+                <Input id="postalCode" inputMode="numeric" autoComplete="postal-code" maxLength={5} aria-invalid={!!errors.postalCode} {...register('postalCode')} />
+              </Field>
+            </div>
+          </Section>
+
+          <Section n={3} title={t('checkout.payment')}>
+            <div className="space-y-2.5">
+              {PAYMENTS.map(({ id, icon: Icon, desc }) => (
+                <label
+                  key={id}
+                  className={cx(
+                    'flex items-center gap-4 rounded-2xl border p-4 cursor-pointer transition-colors',
+                    payment === id ? 'border-gold bg-gold-soft/50 ring-1 ring-gold' : 'border-line hover:border-gold'
+                  )}
+                >
+                  <input type="radio" value={id} {...register('paymentMethod')} className="w-4 h-4" />
+                  <Icon className="w-5 h-5 text-gold shrink-0" />
+                  <span className="flex-1">
+                    <span className="block font-medium text-ink">{content.payment(id)}</span>
+                    <span className="block text-xs text-ink-3">{t(desc)}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </Section>
+
+          <Button type="submit" size="lg" block loading={submitting}>
+            {submitting ? t('checkout.placing') : t('checkout.place', { amount: price(total) })}
+          </Button>
+        </form>
+
+        <aside className="lg:col-span-5 lg:sticky lg:top-28 card p-6 space-y-5">
+          <h2 className="text-xl text-ink">{t('checkout.orderSummary', { count: cart.length })}</h2>
+          <ul className="space-y-4 max-h-80 overflow-y-auto pr-1">
+            {cart.map((item) => {
+              const v = content.product(item.product);
+              return (
+                <li key={`${item.product.id}-${item.selectedSize}`} className="flex items-center gap-3">
+                  <div className="relative shrink-0">
+                    <ProductImage src={item.product.image} alt="" className="w-14 h-14 rounded-xl object-cover" />
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-accent text-on-accent text-[10px] font-semibold flex items-center justify-center">
+                      {item.quantity}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-ink line-clamp-1">{v.name}</p>
+                    <p className="text-xs text-ink-3">{t('cart.size', { size: item.selectedSize })}</p>
+                  </div>
+                  <span className="text-sm font-medium text-ink tabular-nums">{price(item.product.price * item.quantity)}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <dl className="space-y-2 text-sm pt-4 border-t border-line">
+            <div className="flex justify-between text-ink-2">
+              <dt>{t('cart.subtotal')}</dt>
+              <dd className="text-ink tabular-nums">{price(subtotal)}</dd>
+            </div>
+            <div className="flex justify-between text-ink-2">
+              <dt>{t('cart.shipping')}</dt>
+              <dd className={shippingFee === 0 ? 'text-success' : 'text-ink tabular-nums'}>
+                {shippingFee === 0 ? t('cart.free') : price(shippingFee)}
+              </dd>
+            </div>
+            <div className="flex justify-between items-baseline pt-3 border-t border-line">
+              <dt className="font-medium text-ink">{t('cart.total')}</dt>
+              <dd className="text-2xl font-semibold text-ink tabular-nums">{price(total)}</dd>
+            </div>
+          </dl>
+        </aside>
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
-        {/* Form Container */}
-        <div className="lg:col-span-7">
-          <form
-            onSubmit={handleSubmit(onFormSubmit)}
-            className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E8C5C8]/50 shadow-md space-y-6"
-          >
-            {/* Customer Details */}
-            <div className="space-y-4">
-              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#3E2723] pb-2 border-b border-[#F2EBE1]">
-                1. ข้อมูลผู้รับสินค้า
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Full name */}
-                <div className="space-y-1.5">
-                  <label className="text-sm sm:text-base font-semibold text-[#3E2723]">
-                    ชื่อ - นามสกุล <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    {...register('fullName')}
-                    placeholder="เช่น คุณกมลวรรณ ทรัพย์เจริญ"
-                    className="w-full px-4 py-3 rounded-xl border border-[#D9C8BE] focus:border-[#C6A24D] outline-none text-base text-[#4A3E3D]"
-                  />
-                  {errors.fullName && (
-                    <p className="text-sm text-rose-500 font-medium">{errors.fullName.message}</p>
-                  )}
-                </div>
-
-                {/* Phone */}
-                <div className="space-y-1.5">
-                  <label className="text-sm sm:text-base font-semibold text-[#3E2723]">
-                    เบอร์โทรศัพท์ <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    {...register('phone')}
-                    placeholder="เช่น 0812345678"
-                    className="w-full px-4 py-3 rounded-xl border border-[#D9C8BE] focus:border-[#C6A24D] outline-none text-base text-[#4A3E3D]"
-                  />
-                  {errors.phone && (
-                    <p className="text-sm text-rose-500 font-medium">{errors.phone.message}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Address */}
-            <div className="space-y-4 pt-2">
-              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#3E2723] pb-2 border-b border-[#F2EBE1]">
-                2. ที่อยู่สำหรับจัดส่ง
-              </h3>
-
-              <div className="space-y-3.5">
-                <div className="space-y-1.5">
-                  <label className="text-sm sm:text-base font-semibold text-[#3E2723]">
-                    ที่อยู่ เลขที่ ซอย ถนน <span className="text-rose-500">*</span>
-                  </label>
-                  <textarea
-                    rows={2}
-                    {...register('address')}
-                    placeholder="เช่น 123/45 ซอยทองหล่อ 10 ถนนสุขุมวิท 55"
-                    className="w-full px-4 py-3 rounded-xl border border-[#D9C8BE] focus:border-[#C6A24D] outline-none text-base text-[#4A3E3D]"
-                  />
-                  {errors.address && (
-                    <p className="text-sm text-rose-500 font-medium">{errors.address.message}</p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-sm sm:text-base font-semibold text-[#3E2723]">
-                      จังหวัด <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      {...register('province')}
-                      placeholder="กรุงเทพมหานคร"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#D9C8BE] focus:border-[#C6A24D] outline-none text-base text-[#4A3E3D]"
-                    />
-                    {errors.province && (
-                      <p className="text-sm text-rose-500 font-medium">{errors.province.message}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm sm:text-base font-semibold text-[#3E2723]">
-                      เขต / อำเภอ <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      {...register('district')}
-                      placeholder="วัฒนา"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#D9C8BE] focus:border-[#C6A24D] outline-none text-base text-[#4A3E3D]"
-                    />
-                    {errors.district && (
-                      <p className="text-sm text-rose-500 font-medium">{errors.district.message}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-sm sm:text-base font-semibold text-[#3E2723]">
-                      รหัสไปรษณีย์ <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      {...register('postalCode')}
-                      placeholder="10110"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#D9C8BE] focus:border-[#C6A24D] outline-none text-base text-[#4A3E3D]"
-                    />
-                    {errors.postalCode && (
-                      <p className="text-sm text-rose-500 font-medium">{errors.postalCode.message}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Payment Method */}
-            <div className="space-y-4 pt-2">
-              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#3E2723] pb-2 border-b border-[#F2EBE1]">
-                3. ช่องทางการชำระเงิน
-              </h3>
-
-              <div className="space-y-3">
-                {/* PromptPay */}
-                <label
-                  className={`flex items-center gap-3.5 p-4 rounded-2xl border cursor-pointer transition-all ${
-                    selectedPayment === 'promptpay'
-                      ? 'bg-[#E8C5C8]/30 border-[#8C5258] shadow-xs'
-                      : 'border-[#D9C8BE] hover:bg-[#FAF7F2]'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    value="promptpay"
-                    {...register('paymentMethod')}
-                    className="w-5 h-5 accent-[#8C5258]"
-                  />
-                  <QrCode className="w-6 h-6 text-[#8C5258]" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-base sm:text-lg text-[#3E2723] block">
-                      พร้อมเพย์ (PromptPay QR Code)
-                    </span>
-                    <span className="text-xs sm:text-sm text-[#8C7063]">
-                      สแกนจ่ายทันทีผ่าน Mobile Banking ทุกธนาคาร ไม่มีค่าธรรมเนียม
-                    </span>
-                  </div>
-                </label>
-
-                {/* Credit Card */}
-                <label
-                  className={`flex items-center gap-3.5 p-4 rounded-2xl border cursor-pointer transition-all ${
-                    selectedPayment === 'credit_card'
-                      ? 'bg-[#E8C5C8]/30 border-[#8C5258] shadow-xs'
-                      : 'border-[#D9C8BE] hover:bg-[#FAF7F2]'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    value="credit_card"
-                    {...register('paymentMethod')}
-                    className="w-5 h-5 accent-[#8C5258]"
-                  />
-                  <CreditCard className="w-6 h-6 text-[#C6A24D]" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-base sm:text-lg text-[#3E2723] block">
-                      บัตรเครดิต / เดบิต (Visa, Mastercard, JCB)
-                    </span>
-                    <span className="text-xs sm:text-sm text-[#8C7063]">
-                      ระบบความปลอดภัยระดับสากล 3D Secure
-                    </span>
-                  </div>
-                </label>
-
-                {/* COD */}
-                <label
-                  className={`flex items-center gap-3.5 p-4 rounded-2xl border cursor-pointer transition-all ${
-                    selectedPayment === 'cod'
-                      ? 'bg-[#E8C5C8]/30 border-[#8C5258] shadow-xs'
-                      : 'border-[#D9C8BE] hover:bg-[#FAF7F2]'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    value="cod"
-                    {...register('paymentMethod')}
-                    className="w-5 h-5 accent-[#8C5258]"
-                  />
-                  <Truck className="w-6 h-6 text-[#8C7063]" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-base sm:text-lg text-[#3E2723] block">
-                      เก็บเงินปลายทาง (Cash on Delivery)
-                    </span>
-                    <span className="text-xs sm:text-sm text-[#8C7063]">
-                      ชำระเงินสดกับเจ้าหน้าที่ขนส่งเมื่อได้รับพัสดุ
-                    </span>
-                  </div>
-                </label>
-              </div>
-              {errors.paymentMethod && (
-                <p className="text-sm text-rose-500 font-medium">{errors.paymentMethod.message}</p>
-              )}
-            </div>
-
-            {/* Submit Button */}
-            <div className="pt-4 border-t border-[#F2EBE1]">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-4.5 rounded-full bg-[#8C5258] hover:bg-[#734045] text-white font-bold text-lg sm:text-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
-              >
-                <span>{isSubmitting ? 'กำลังบันทึกคำสั่งซื้อ...' : `ยืนยันการสั่งซื้อ (฿${total.toLocaleString()})`}</span>
-                <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Right Summary column */}
-        <div className="lg:col-span-5 bg-white rounded-3xl p-6 sm:p-8 border border-[#E8C5C8]/50 shadow-md space-y-6 sticky top-28">
-          <h3 className="font-serif text-xl font-bold text-[#3E2723] pb-3 border-b border-[#F2EBE1]">
-            รายการสินค้าที่สั่งซื้อ ({cart.length} แบบ)
-          </h3>
-
-          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-            {cart.map((item) => (
-              <div
-                key={`${item.product.id}-${item.selectedSize}`}
-                className="flex items-center gap-3 py-2 border-b border-[#FAF4ED]"
-              >
-                <img
-                  src={item.product.image}
-                  alt={item.product.name}
-                  className="w-14 h-14 rounded-xl object-cover bg-gray-50 border border-[#E8C5C8]/30 shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-xs sm:text-sm font-semibold text-[#3E2723] truncate">
-                    {item.product.name}
-                  </h4>
-                  <div className="flex items-center gap-2 text-[11px] text-[#8C7063]">
-                    <span>ไซส์: {item.selectedSize}</span>
-                    <span>x {item.quantity}</span>
-                  </div>
-                </div>
-                <div className="text-xs sm:text-sm font-bold text-[#8C5258]">
-                  ฿{(item.product.price * item.quantity).toLocaleString()}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="space-y-2 pt-2 border-t border-[#F2EBE1] text-xs sm:text-sm">
-            <div className="flex justify-between text-[#5C4D4A]">
-              <span>ยอดรวมสินค้า:</span>
-              <span className="font-semibold text-[#3E2723]">฿{subtotal.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-[#5C4D4A]">
-              <span>ค่าจัดส่ง:</span>
-              <span>{shippingFee === 0 ? 'ฟรีค่าจัดส่ง' : `฿${shippingFee}`}</span>
-            </div>
-            <div className="flex justify-between items-baseline text-[#3E2723] pt-2 border-t border-[#F2EBE1]">
-              <span className="font-bold text-base">ยอดสุทธิที่ต้องชำระ:</span>
-              <span className="font-bold text-xl sm:text-2xl text-[#8C5258]">
-                ฿{total.toLocaleString()}
-              </span>
-            </div>
-          </div>
-
-          <div className="p-3 bg-[#FAF4ED] rounded-xl text-xs text-[#8C7063] flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>มีบริการออกใบเสร็จและรับประกันสินค้าของแท้ 100%</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    </Container>
   );
 };
+
+const Section: React.FC<{ n: number; title: string; children: React.ReactNode }> = ({ n, title, children }) => (
+  <section className="card p-5 sm:p-7 space-y-4">
+    <h2 className="flex items-center gap-3 text-xl text-ink">
+      <span className="w-7 h-7 rounded-full bg-accent text-on-accent text-xs font-sans font-semibold flex items-center justify-center">
+        {n}
+      </span>
+      {title}
+    </h2>
+    {children}
+  </section>
+);
+
+const Row: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+  <div className="flex justify-between gap-4">
+    <span className="text-ink-3 shrink-0">{label}</span>
+    <span className="text-ink text-right">{value}</span>
+  </div>
+);

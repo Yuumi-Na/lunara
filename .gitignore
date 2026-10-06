@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+client_secret_*.json
+storage/*.db-wal
+storage/*.db-shm

@@ -3,11 +3,14 @@
  * ============================================================================
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 1: JavaScript & TypeScript Data Types]
  * - การกำหนดชนิดข้อมูล (Interface & Type)
- * - Object และ Array Types สำหรับสินค้า, ตะกร้า, คำสั่งซื้อ และตัวกรอง
+ * - Object และ Array Types สำหรับสินค้า, ตะกร้า, คำสั่งซื้อ, ผู้ใช้ และรูปภาพ
  * ============================================================================
  */
 
 import { z } from 'zod';
+
+// ภาษาที่รองรับ (ไทย / อังกฤษ)
+export type Lang = 'th' | 'en';
 
 // หมวดหมู่ความต้องการ / พลังหินมงคล (Intentions)
 export type IntentionType =
@@ -21,19 +24,36 @@ export type IntentionType =
   | 'Confidence';
 
 // หมวดหมู่โทนสี (Colors)
-export type ColorType =
-  | 'Pink'
-  | 'Purple'
-  | 'Yellow'
-  | 'Black'
-  | 'White'
-  | 'Green';
+export type ColorType = 'Pink' | 'Purple' | 'Yellow' | 'Black' | 'White' | 'Green';
 
 // สไตล์การออกแบบกำไล (Styles)
 export type StyleType = 'Minimal' | 'Cute' | 'Luxury' | 'Everyday';
 
 // ช่วงราคา (Price Ranges)
 export type PriceRangeType = 'Under 300' | '300-500' | '500-800' | '800+';
+
+export const INTENTIONS: IntentionType[] = [
+  'Love', 'Money', 'Work', 'Study', 'Luck', 'Protection', 'Calm', 'Confidence',
+];
+export const COLORS: ColorType[] = ['Pink', 'Purple', 'Yellow', 'Black', 'White', 'Green'];
+export const STYLES: StyleType[] = ['Minimal', 'Cute', 'Luxury', 'Everyday'];
+export const PRICE_RANGES: PriceRangeType[] = ['Under 300', '300-500', '500-800', '800+'];
+
+export const COLOR_HEX: Record<ColorType, string> = {
+  Pink: '#F2B8C0',
+  Purple: '#9B7FD1',
+  Yellow: '#E2B33C',
+  Black: '#2C2C2C',
+  White: '#EFEDEA',
+  Green: '#3E8E63',
+};
+
+export function matchesPriceRange(price: number, range: PriceRangeType): boolean {
+  if (range === 'Under 300') return price < 300;
+  if (range === '300-500') return price >= 300 && price <= 500;
+  if (range === '500-800') return price > 500 && price <= 800;
+  return price > 800;
+}
 
 // ข้อมูลหินมงคล 24 ชนิด (จากชาร์ตหน้าร้าน)
 export interface LuckyStoneDetail {
@@ -47,6 +67,25 @@ export interface LuckyStoneDetail {
   tagline: string;
 }
 
+// ข้อความสินค้าที่แปลแล้วในแต่ละภาษา (ภาษาไทยคือข้อมูลหลักของสินค้า)
+export interface ProductTranslation {
+  name?: string;
+  tagline?: string;
+  stone?: string;
+  beadSize?: string;
+  description?: string;
+  belief?: string;
+  careRitual?: string;
+  mineralDetails?: Partial<Product['mineralDetails']>;
+}
+
+// ข้อมูลกำไลคราฟต์ (ใช้คำนวณราคาซ้ำฝั่งเซิร์ฟเวอร์)
+export interface CraftSpec {
+  stoneIds: string[];
+  beadSize: string;
+  charm: string;
+}
+
 // ข้อมูลสินค้ากำไลหินมงคล (Product Interface)
 export interface Product {
   id: string;
@@ -54,62 +93,61 @@ export interface Product {
   englishName?: string;
   price: number;
   originalPrice?: number;
-  stone: string; // ชื่อหินหลัก เช่น "Rose Quartz (โรสควอตซ์)"
+  stone: string;
   stoneType?: string;
   tagline?: string;
-  stoneDetails?: string[]; // รายชื่อหินที่เป็นส่วนประกอบ
-  stones?: {
-    name: string;
-    stoneType: string;
-    benefit: string;
-    intentions: string[];
-    color: string;
-  }[];
-  colors: ColorType[]; // โทนสีของกำไล
-  intentions: IntentionType[]; // เสริมด้านใดบ้าง
-  style: StyleType; // สไตล์
-  image: string; // URL รูปภาพ
-  images?: string[];
-  description: string; // รายละเอียดสินค้า
-  belief: string; // คำอธิบายความเชื่อและความหมายมงคล
-  personalBeliefLore?: string; // ตำนานความเชื่อเพิ่มเติม
+  stoneDetails?: string[];
+  colors: ColorType[];
+  intentions: IntentionType[];
+  style: StyleType;
+  image: string; // URL รูปภาพหลัก (ภายนอก หรือ /api/images/:id จากคลังรูปภาพ)
+  images?: string[]; // แกลเลอรีรูปเพิ่มเติม
+  description: string;
+  belief: string;
+  personalBeliefLore?: string;
   mineralDetails?: {
     origin: string;
     hardness: string;
     chakra: string;
     element: string;
   };
-  careRitual?: string; // การดูแลรักษาและชำระล้างหิน
-  stock: number; // จำนวนสินค้าในคลัง
-  beadSize?: string; // ขนาดเม็ดหิน เช่น "หินเจีย ขนาด 3 มิล", "8mm", "10mm"
+  careRitual?: string;
+  stock: number;
+  beadSize?: string;
   beadSizes?: string[];
   isMultiStone?: boolean;
   isBestSeller?: boolean;
   isNewArrival?: boolean;
   rating?: number;
   reviewCount?: number;
+  translations?: Partial<Record<Lang, ProductTranslation>>;
+  craft?: CraftSpec;
 }
 
 // รายการสินค้าในตะกร้า (Cart Item)
 export interface CartItem {
   product: Product;
   quantity: number;
-  selectedSize: string; // เช่น "15 ซม.", "16 ซม.", "17 ซม."
+  selectedSize: string; // เช่น "16 cm"
 }
 
 // สถานะคำสั่งซื้อ (Order Status)
-export type OrderStatus = 'Ordered' | 'Preparing' | 'Shipping' | 'Completed';
+export type OrderStatus = 'Ordered' | 'Preparing' | 'Shipping' | 'Completed' | 'Cancelled';
+export const ORDER_STATUSES: OrderStatus[] = ['Ordered', 'Preparing', 'Shipping', 'Completed', 'Cancelled'];
+
+export type PaymentMethod = 'promptpay' | 'credit_card' | 'cod';
 
 // ข้อมูลคำสั่งซื้อ (Order Interface)
 export interface Order {
   id: string;
+  userEmail: string;
   customerName: string;
   phone: string;
   address: string;
   province: string;
   district: string;
   postalCode: string;
-  paymentMethod: string;
+  paymentMethod: PaymentMethod;
   items: CartItem[];
   subtotal: number;
   shippingFee: number;
@@ -118,78 +156,107 @@ export interface Order {
   createdAt: string;
 }
 
-// ข้อมูลตัวกรองในหน้า Shop & Find Your Bracelet
-export interface FilterState {
-  searchQuery: string;
-  intentions: IntentionType[];
-  colors: ColorType[];
-  styles: StyleType[];
-  priceRanges: PriceRangeType[];
+// ผู้ใช้งานที่ล็อกอินด้วย Google (แยกสิทธิ์ admin / customer)
+export type UserRole = 'admin' | 'customer';
+
+export interface AppUser {
+  email: string;
+  name: string;
+  avatar?: string;
+  role: UserRole;
+  createdAt?: string;
+  lastLoginAt?: string;
 }
+
+// รีวิวสินค้า — ชื่อ/รูปผู้รีวิวมาจากบัญชีที่ล็อกอิน (แก้ไขเองไม่ได้)
+export interface Review {
+  id: string;
+  productId: string;
+  userEmail: string;
+  name: string;
+  avatar?: string;
+  rating: number;
+  comment: string;
+  verifiedPurchase: boolean; // ผู้รีวิวมีคำสั่งซื้อสินค้านี้จริง
+  isTest: boolean; // admin รีวิวเพื่อทดสอบระบบ
+  hidden: boolean; // admin ซ่อนรีวิวนี้จากหน้าร้าน
+  reply: { text: string; by: string; at: string } | null; // คำตอบจากร้าน (แสดงใต้รีวิว)
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** สิทธิ์การรีวิวของผู้ใช้ปัจจุบัน */
+export type ReviewEligibility = 'login' | 'purchase' | 'eligible';
 
 // ผลลัพธ์การค้นหาในหน้า Find Your Bracelet พร้อม Match Score
 export interface MatchedProduct {
   product: Product;
-  matchScore: number; // คำนวณเป็นร้อยละ 100%, 80%, 60% เป็นต้น
-  matchedReasons: string[]; // เหตุผลที่ตรงกับตัวเลือกของผู้ใช้
+  matchScore: number;
+  matchedReasons: string[];
 }
 
-// ผู้ดูแลระบบ / Google OAuth User
-export interface AdminUser {
-  id: string;
-  name: string;
-  email: string;
-  avatar?: string;
-  role: 'admin';
+// ค่าจัดส่ง: ฟรีเมื่อยอดสั่งซื้อครบ 500 บาท (ใช้ร่วมกันทั้ง Client และ Server)
+export const FREE_SHIPPING_THRESHOLD = 500;
+export const SHIPPING_FEE = 45;
+
+export function calcShipping(subtotal: number): number {
+  if (subtotal <= 0) return 0;
+  return subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE;
 }
 
 /**
  * ============================================================================
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 8: Zod Schema Validation]
- * - การสร้าง Schema เพื่อตรวจสอบความถูกต้องของฟอร์ม Checkout และ Product CRUD
+ * - message ของ Zod เป็น "คีย์ภาษา" (เช่น err.fullName) แล้วแปลตอนแสดงผล
+ *   ทำให้ข้อความแจ้งเตือนรองรับทั้ง 5 ภาษา
+ * - Schema เดียวกันใช้ตรวจสอบทั้งฝั่งหน้าเว็บและฝั่ง API
  * ============================================================================
  */
 
-// Zod Schema สำหรับฟอร์ม Checkout (หน้าชำระเงิน)
 export const checkoutSchema = z.object({
-  fullName: z
-    .string()
-    .min(3, { message: 'กรุณากรอกชื่อ-นามสกุลอย่างน้อย 3 ตัวอักษร' }),
-  phone: z
-    .string()
-    .regex(/^0[0-9]{8,9}$/, {
-      message: 'กรุณากรอกเบอร์โทรศัพท์ที่ถูกต้อง (ขึ้นต้นด้วย 0 ความยาว 9-10 หลัก)',
-    }),
-  address: z
-    .string()
-    .min(5, { message: 'กรุณากรอกที่อยู่ เลขที่ ซอย ถนน อย่างละเอียด' }),
-  province: z
-    .string()
-    .min(2, { message: 'กรุณากรอกจังหวัด' }),
-  district: z
-    .string()
-    .min(2, { message: 'กรุณากรอกเขต / อำเภอ' }),
-  postalCode: z
-    .string()
-    .regex(/^[0-9]{5}$/, { message: 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก' }),
+  fullName: z.string().trim().min(3, { message: 'err.fullName' }),
+  phone: z.string().trim().regex(/^0[0-9]{8,9}$/, { message: 'err.phone' }),
+  address: z.string().trim().min(5, { message: 'err.address' }),
+  province: z.string().trim().min(2, { message: 'err.province' }),
+  district: z.string().trim().min(2, { message: 'err.district' }),
+  postalCode: z.string().trim().regex(/^[0-9]{5}$/, { message: 'err.postalCode' }),
   paymentMethod: z.enum(['promptpay', 'credit_card', 'cod']),
 });
 
 export type CheckoutFormValues = z.infer<typeof checkoutSchema>;
 
-// Zod Schema สำหรับฟอร์มจัดการสินค้า Admin (CRUD)
 export const productFormSchema = z.object({
-  name: z.string().min(2, { message: 'ชื่อสินค้าต้องมีอย่างน้อย 2 ตัวอักษร' }),
-  price: z.number().positive({ message: 'ราคาต้องมากกว่า 0 บาท' }),
-  stone: z.string().min(2, { message: 'กรุณาระบุชื่อหินมงคล' }),
-  colors: z.array(z.string()).min(1, { message: 'กรุณาเลือกสีอย่างน้อย 1 สี' }),
-  intentions: z.array(z.string()).min(1, { message: 'กรุณาเลือกด้านมงคลอย่างน้อย 1 ด้าน' }),
+  name: z.string().trim().min(2, { message: 'err.productName' }),
+  englishName: z.string().trim().optional(),
+  price: z.number({ message: 'err.price' }).positive({ message: 'err.price' }),
+  originalPrice: z.number().nonnegative().optional(),
+  stone: z.string().trim().min(2, { message: 'err.stone' }),
+  colors: z.array(z.enum(COLORS as [ColorType, ...ColorType[]])).min(1, { message: 'err.colors' }),
+  intentions: z
+    .array(z.enum(INTENTIONS as [IntentionType, ...IntentionType[]]))
+    .min(1, { message: 'err.intentions' }),
   style: z.enum(['Minimal', 'Cute', 'Luxury', 'Everyday']),
-  description: z.string().min(10, { message: 'คำอธิบายสินค้าต้องมีอย่างน้อย 10 ตัวอักษร' }),
-  belief: z.string().min(10, { message: 'ความหมาย/ความเชื่อต้องมีอย่างน้อย 10 ตัวอักษร' }),
-  image: z.string().min(1, { message: 'กรุณากรอกที่อยู่รูปภาพ' }),
-  stock: z.number().int().nonnegative({ message: 'จำนวนสต็อกต้องไม่ติดลบ' }),
+  description: z.string().trim().min(10, { message: 'err.description' }),
+  belief: z.string().trim().min(10, { message: 'err.belief' }),
+  image: z.string().trim().min(1, { message: 'err.image' }),
+  images: z.array(z.string()).optional(),
+  stock: z.number({ message: 'err.stock' }).int().nonnegative({ message: 'err.stock' }),
   beadSize: z.string(),
+  isBestSeller: z.boolean().optional(),
+  isNewArrival: z.boolean().optional(),
 });
 
 export type ProductFormValues = z.infer<typeof productFormSchema>;
+
+// Zod Schema สำหรับฟอร์มรีวิว (ไม่มีช่องชื่อ — ใช้ชื่อจากบัญชีผู้ใช้)
+export const reviewSchema = z.object({
+  rating: z.number().int().min(1, { message: 'err.rating' }).max(5, { message: 'err.rating' }),
+  comment: z.string().trim().min(5, { message: 'err.reviewComment' }).max(1000, { message: 'err.reviewTooLong' }),
+});
+
+export type ReviewFormValues = z.infer<typeof reviewSchema>;
+
+// Zod Schema สำหรับ admin ตอบกลับรีวิว
+export const reviewReplySchema = z.object({
+  reply: z.string().trim().min(1, { message: 'err.replyEmpty' }).max(1000, { message: 'err.reviewTooLong' }),
+});

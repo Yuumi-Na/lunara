@@ -9,7 +9,8 @@
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { CartItem, Product } from '../types';
+import { CartItem, Product, calcShipping } from '../types';
+import { DEFAULT_WRIST_SIZE } from '../data/craft';
 
 interface CartContextType {
   cart: CartItem[];
@@ -49,17 +50,17 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [cart]);
 
   // 2. [Event & Action] ฟังก์ชันเพิ่มสินค้าลงตะกร้า
-  const addToCart = (product: Product, quantity: number = 1, selectedSize: string = '16 ซม.') => {
+  const addToCart = (product: Product, quantity: number = 1, selectedSize: string = DEFAULT_WRIST_SIZE) => {
     setCart((prev) => {
       const existingIndex = prev.findIndex(
         (item) => item.product.id === product.id && item.selectedSize === selectedSize
       );
 
       if (existingIndex > -1) {
-        // หากมีสินค้านี้และไซส์นี้อยู่แล้ว ให้เพิ่มจำนวน
-        const updated = [...prev];
-        updated[existingIndex].quantity += quantity;
-        return updated;
+        // หากมีสินค้านี้และไซส์นี้อยู่แล้ว ให้เพิ่มจำนวน (สร้าง object ใหม่ ไม่แก้ state เดิมโดยตรง)
+        return prev.map((item, idx) =>
+          idx === existingIndex ? { ...item, quantity: item.quantity + quantity } : item
+        );
       } else {
         // เพิ่มเป็นรายการใหม่
         return [...prev, { product, quantity, selectedSize }];
@@ -100,7 +101,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   // ค่าจัดส่ง: ฟรีค่าจัดส่งเมื่อสั่งซื้อครบ 500 บาทขึ้นไป (หากไม่ถึง ค่าส่ง 45 บาท)
-  const shippingFee = subtotal > 0 && subtotal >= 500 ? 0 : subtotal > 0 ? 45 : 0;
+  const shippingFee = calcShipping(subtotal);
   const total = subtotal + shippingFee;
 
   return (

@@ -5,424 +5,331 @@
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 1: JavaScript Array Algorithms & Dynamic Price Calculation]
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 5: Responsive Design]
  *
- * ฟีเจอร์เด่นจากชาร์ตหน้าร้าน ("## เลือกหินเองได้ ## หินเจีย ขนาด 3 มิล"):
  * 1. เลือกรวมหินได้ 1 - 4 ชนิดจากหินมงคลแท้ 24 ชนิดของทางร้าน
- * 2. มีตัวจำลองกำไลข้อมือแบบเรียลไทม์ (Live Bracelet Bead Preview)
- * 3. เลือกขนาดเม็ดหิน (หินเจีย 3 มิล, 8mm, 10mm) และขนาดรอบข้อมือ (14 - 18 ซม.)
- * 4. เลือกอะไหล่คั่นทองคำแท้ (14K Gold Charm, 18K White Gold, Rose Gold)
- * 5. คำนวณราคาและพลังงานรวมอัตโนมัติ แล้วเพิ่มลงในตะกร้าสินค้าได้ทันที
+ * 2. ตัวจำลองกำไลแบบเรียลไทม์ (Live Bracelet Bead Preview)
+ * 3. เลือกขนาดเม็ดหิน (3 มิล, 8mm, 10mm), รอบข้อมือ และอะไหล่ชาร์ม
+ * 4. คำนวณราคาอัตโนมัติ (ฟังก์ชันเดียวกับฝั่งเซิร์ฟเวอร์ใน data/craft.ts)
  * ============================================================================
  */
 
-import React, { useState } from 'react';
-import { Sparkles, Check, ShoppingBag, Info, RefreshCw, Gem, HelpCircle, ArrowRight } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Check, Search, ShoppingBag, Sparkles } from 'lucide-react';
 import { LUCKY_STONES_CATALOG } from '../data/stones';
+import {
+  calcCraftPrice,
+  CRAFT_BEAD_SIZES,
+  CRAFT_CHARMS,
+  CRAFT_MAX_STONES,
+  CRAFT_WRIST_SIZES,
+  type CraftBeadSizeId,
+  type CraftCharmId,
+} from '../data/craft';
 import { useCart } from '../context/CartContext';
-import { Product } from '../types';
+import { useToast } from '../context/ToastContext';
+import type { Product } from '../types';
+import { Badge, Button, Container, cx, PageHeader } from '../components/ui';
+import { useI18n, type TKey } from '../i18n';
+import { useContent } from '../i18n/content';
 
-interface CraftBraceletPageProps {
-  onNavigate: (url: string) => void;
-}
+const BEAD_COUNT = 18;
 
-export const CraftBraceletPage: React.FC<CraftBraceletPageProps> = ({ onNavigate }) => {
+export const CraftBraceletPage: React.FC<{ onOpenCart: () => void }> = ({ onOpenCart }) => {
   const { addToCart } = useCart();
+  const toast = useToast();
+  const { t, price } = useI18n();
+  const content = useContent();
 
-  // 1. [State] Selected Stones (ค่าเริ่มต้นเลือก 3 ชนิด)
-  const [selectedStoneIds, setSelectedStoneIds] = useState<string[]>([
-    'rose-quartz',
-    'citrine',
-    'amethyst',
-  ]);
+  const [stoneIds, setStoneIds] = useState<string[]>(['rose-quartz', 'citrine', 'amethyst']);
+  const [beadSize, setBeadSize] = useState<CraftBeadSizeId>('3mm');
+  const [wristSize, setWristSize] = useState('16.0 cm');
+  const [charm, setCharm] = useState<CraftCharmId>('gold14k');
+  const [search, setSearch] = useState('');
+  const [added, setAdded] = useState(false);
 
-  // 2. [State] Bead Size
-  const [beadSize, setBeadSize] = useState<string>('หินเจีย ขนาด 3 มิล');
+  const activeStones = stoneIds
+    .map((id) => LUCKY_STONES_CATALOG.find((s) => s.id === id))
+    .filter((s): s is (typeof LUCKY_STONES_CATALOG)[number] => !!s);
+  const intentions = Array.from(new Set(activeStones.flatMap((s) => s.category)));
+  const total = calcCraftPrice(beadSize, activeStones.length);
 
-  // 3. [State] Wrist Size
-  const [wristSize, setWristSize] = useState<string>('16.0 cm');
+  const visibleStones = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return LUCKY_STONES_CATALOG;
+    return LUCKY_STONES_CATALOG.filter((s) => {
+      const v = content.stone(s);
+      return [s.nameTh, s.nameEn, v.name, v.tagline].join(' ').toLowerCase().includes(q);
+    });
+  }, [search, content]);
 
-  // 4. [State] Charm Accent
-  const [charm, setCharm] = useState<string>('14K Gold Charm');
-
-  // 5. [State] Added Animation
-  const [isAdded, setIsAdded] = useState<boolean>(false);
-
-  // Toggle selection
-  const handleToggleStone = (stoneId: string) => {
-    if (selectedStoneIds.includes(stoneId)) {
-      if (selectedStoneIds.length <= 1) {
-        alert('กำไลคราฟต์ควรเลือกหินอย่างน้อย 1 ชนิดค่ะ');
-        return;
-      }
-      setSelectedStoneIds((prev) => prev.filter((id) => id !== stoneId));
+  const toggleStone = (id: string) => {
+    if (stoneIds.includes(id)) {
+      if (stoneIds.length <= 1) return toast(t('craft.minStone'), 'info');
+      setStoneIds((prev) => prev.filter((x) => x !== id));
     } else {
-      if (selectedStoneIds.length >= 4) {
-        alert('สามารถเลือกผสมได้สูงสุด 4 ชนิดใน 1 เส้น เพื่อความสมดุลของคลื่นพลังงานค่ะ');
-        return;
-      }
-      setSelectedStoneIds((prev) => [...prev, stoneId]);
+      if (stoneIds.length >= CRAFT_MAX_STONES) return toast(t('craft.maxStone', { max: CRAFT_MAX_STONES }), 'info');
+      setStoneIds((prev) => [...prev, id]);
     }
   };
 
-  // ดึงรายละเอียดหินที่ถูกเลือก
-  const activeStones = LUCKY_STONES_CATALOG.filter((s) => selectedStoneIds.includes(s.id));
-
-  // รวม Intentions ทั้งหมด
-  const combinedIntentions = Array.from(
-    new Set(activeStones.flatMap((s) => s.category))
-  );
-
-  // คำนวณราคาตามขนาดและจำนวนหิน
-  const is3mm = beadSize.includes('3 มิล');
-  const basePrice = is3mm ? 490 : 1890;
-  const extraPricePerStone = is3mm ? 90 : 300;
-  const totalPrice = basePrice + Math.max(0, activeStones.length - 1) * extraPricePerStone;
-
-  // เพิ่มลงในตะกร้า
-  const handleAddCustomToCart = () => {
-    const stoneNames = activeStones.map((s) => `${s.nameTh} (${s.nameEn})`).join(' + ');
-    const customProduct: Product = {
-      id: `custom-craft-${Date.now()}`,
+  const handleAdd = () => {
+    const craftProduct: Product = {
+      id: `craft-${beadSize}-${charm}-${[...stoneIds].sort().join('+')}`,
       name: `กำไลคราฟต์ผสมหิน "${activeStones.map((s) => s.nameTh).join(' & ')}"`,
-      englishName: `Custom Multi-Stone Bracelet (${activeStones.map((s) => s.nameEn).join(' & ')})`,
-      stone: stoneNames,
-      stoneType: activeStones.map((s) => s.nameEn).join(' & '),
-      tagline: `กำไลรวมพลังงานพิเศษ เสริม ${combinedIntentions.join(' · ')} ในเส้นเดียว`,
-      price: totalPrice,
-      originalPrice: totalPrice + (is3mm ? 200 : 500),
-      image: 'https://images.unsplash.com/photo-1611591475819-797de0d7269e?auto=format&fit=crop&w=900&q=80',
-      intentions: combinedIntentions as any,
-      colors: activeStones.map((s) => s.color),
+      englishName: `Custom Bracelet (${activeStones.map((s) => s.nameEn).join(' & ')})`,
+      stone: activeStones.map((s) => `${s.nameTh} (${s.nameEn})`).join(' + '),
+      price: total,
+      image: '/bracelet-placeholder.svg',
+      intentions,
+      colors: Array.from(new Set(activeStones.map((s) => s.color))),
       style: 'Luxury',
       stock: 99,
-      beadSize: `${beadSize} (อะไหล่ ${charm})`,
-      description: `กำไลคราฟต์เฉพาะบุคคลที่ผสานหินมงคล ${activeStones.length} ชนิด: ${stoneNames} ตกแต่งด้วย ${charm} ขนาดข้อมือ ${wristSize}`,
-      belief: `ความเชื่อ: เสริมพลังงานประสาน ${combinedIntentions.join(', ')} ในเส้นเดียว (ความเชื่อส่วนบุคคล)`,
-      mineralDetails: {
-        origin: 'คัดสรรหินธรรมชาติแท้ 100%',
-        hardness: '6.5 - 7.5 Mohs',
-        chakra: 'สมดุลหลายจักระเกื้อหนุน',
-        element: 'ธาตุผสมสมดุล',
-      },
+      description: '',
+      belief: '',
+      craft: { stoneIds, beadSize, charm },
     };
-
-    addToCart(customProduct, 1, wristSize);
-    setIsAdded(true);
-    setTimeout(() => setIsAdded(false), 2000);
+    addToCart(craftProduct, 1, wristSize);
+    setAdded(true);
+    toast(t('craft.added'));
+    setTimeout(() => setAdded(false), 1800);
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-12">
-      {/* Page Title */}
-      <div className="text-center max-w-3xl mx-auto space-y-3">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#E8D3CB]/40 border border-[#E0B8B2] text-[#7A584A] text-xs font-semibold">
-          <Sparkles className="w-4 h-4 text-[#C79F5E]" />
-          <span>SIGNATURE CRAFT • เลือกหินเองได้ตามใจปรารถนา</span>
-        </div>
-        <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-bold text-[#2D2420]">
-          คราฟต์กำไลผสมหินมงคลเฉพาะคุณ
-        </h1>
-        <p className="text-sm sm:text-base text-[#6C5B52] leading-relaxed">
-          เลือกผสมหินมงคล 1 - 4 ชนิดจากชาร์ตหน้าร้านเพื่อสร้างกำไลเส้นเดียวในโลกที่ตอบโจทย์ชีวิต ความรัก การเงิน และการงานของคุณที่สุด
-        </p>
-      </div>
+    <Container className="py-10 sm:py-14 space-y-10">
+      <PageHeader center eyebrow={t('craft.eyebrow')} title={t('craft.title')} subtitle={t('craft.subtitle')} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
-        {/* Left Column: Live Interactive Bracelet Visualizer */}
-        <div className="lg:col-span-5 bg-white rounded-3xl p-6 sm:p-8 border border-[#EAE3DC] shadow-md space-y-6 sticky top-28">
-          <div className="flex items-center justify-between pb-3 border-b border-[#F0EAE4]">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#8C7063]">
-              LIVE BRACELET SIMULATOR
-            </span>
-            <span className="text-xs bg-[#FAF5F0] text-[#7A584A] px-2.5 py-0.5 rounded-full font-bold">
-              {activeStones.length} ชนิดผสมกัน
-            </span>
+      <div className="grid lg:grid-cols-12 gap-8 lg:gap-10 items-start">
+        {/* Preview */}
+        <aside className="lg:col-span-5 lg:sticky lg:top-28 card p-6 sm:p-8 space-y-6">
+          <div className="flex items-center justify-between">
+            <span className="eyebrow">{t('craft.preview')}</span>
+            <Badge>{t('craft.stoneCount', { count: activeStones.length, max: CRAFT_MAX_STONES })}</Badge>
           </div>
 
-          {/* Interactive Circular Bracelet Graphic */}
-          <div className="relative aspect-square w-full max-w-[320px] mx-auto rounded-full bg-gradient-to-tr from-[#FAF5F0] via-[#FFFFFF] to-[#FAF5F0] border-2 border-dashed border-[#D8C7B8] flex items-center justify-center p-4">
-            {/* Center Charm / Brand Logo */}
-            <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-[#FAF5F0] to-white shadow-inner border border-[#EAE3DC] flex flex-col items-center justify-center text-center p-2 z-10">
-              <span className="font-brand text-xs font-bold tracking-widest text-[#4E3C34]">
-                LUNARA
-              </span>
-              <span className="text-[10px] text-[#C79F5E] font-medium mt-0.5">
-                {charm.split(' ')[0]}
-              </span>
-              <span className="text-[9px] text-[#8C7063] mt-0.5">{wristSize}</span>
+          <div className="relative aspect-square w-full max-w-[300px] mx-auto">
+            <div className="absolute inset-[8%] rounded-full border border-dashed border-line-strong" />
+            <div className="absolute inset-[34%] rounded-full bg-surface-2 border border-line flex flex-col items-center justify-center text-center">
+              <span className="font-brand text-[0.7rem] text-ink">LUNARA</span>
+              <span className="text-[10px] text-gold mt-0.5">{wristSize}</span>
             </div>
-
-            {/* Circular Beads arranged mathematically around the center */}
-            {Array.from({ length: 16 }).map((_, beadIdx) => {
-              const stoneIndex = beadIdx % activeStones.length;
-              const stone = activeStones[stoneIndex] || activeStones[0];
-              const angle = (beadIdx / 16) * 2 * Math.PI;
-              const radius = 115; // pixels from center
-              const x = Math.cos(angle) * radius;
-              const y = Math.sin(angle) * radius;
-
+            {Array.from({ length: BEAD_COUNT }).map((_, i) => {
+              const stone = activeStones[i % activeStones.length];
+              const angle = (i / BEAD_COUNT) * 2 * Math.PI - Math.PI / 2;
+              const r = 42; // % ของรัศมีวง
+              const isCharm = charm !== 'none' && i === 0;
               return (
-                <div
-                  key={beadIdx}
+                <span
+                  key={i}
+                  title={isCharm ? t(`craft.charm.${charm}` as TKey) : content.stone(stone).name}
+                  className={cx(
+                    'absolute rounded-full -translate-x-1/2 -translate-y-1/2 transition-all duration-500 shadow-md',
+                    isCharm ? 'w-[9%] h-[9%] ring-2 ring-white/70' : 'w-[11%] h-[11%] ring-1 ring-black/10'
+                  )}
                   style={{
-                    transform: `translate(${x}px, ${y}px)`,
-                    backgroundColor: stone.hexColor,
+                    left: `${50 + r * Math.cos(angle)}%`,
+                    top: `${50 + r * Math.sin(angle)}%`,
+                    background: isCharm
+                      ? charm === 'whiteGold18k'
+                        ? 'linear-gradient(135deg,#f4f4f4,#bdbdbd)'
+                        : charm === 'roseGold'
+                          ? 'linear-gradient(135deg,#f3c7b5,#b97a62)'
+                          : 'linear-gradient(135deg,#f6dd8f,#b38b3b)'
+                      : `radial-gradient(circle at 32% 30%, rgba(255,255,255,0.75), ${stone.hexColor} 45%, ${stone.hexColor})`,
                   }}
-                  className={`absolute w-7 h-7 sm:w-8 sm:h-8 rounded-full shadow-md border-2 border-white flex items-center justify-center text-[10px] font-bold transition-all duration-300 hover:scale-125 cursor-pointer`}
-                  title={`${stone.nameTh} (${stone.nameEn})`}
-                >
-                  <span className="opacity-0 hover:opacity-100 bg-black/75 text-white text-[9px] px-1 rounded absolute -top-5 whitespace-nowrap z-20">
-                    {stone.nameTh}
-                  </span>
-                </div>
+                />
               );
             })}
           </div>
 
-          {/* Selected Stones List */}
-          <div className="space-y-2 pt-2">
-            <h4 className="text-xs font-semibold text-[#8C7063]">หินที่ร้อยเรียงในกำไลเส้นนี้:</h4>
-            <div className="space-y-1.5">
-              {activeStones.map((st) => (
-                <div
-                  key={st.id}
-                  className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#EAE3DC] flex items-center justify-between text-xs"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-3.5 h-3.5 rounded-full border border-black/15 shadow-xs"
-                      style={{ backgroundColor: st.hexColor }}
-                    />
-                    <strong className="text-[#2D2420]">{st.nameTh} ({st.nameEn})</strong>
-                  </div>
-                  <span className="text-[#7A584A] text-[11px] truncate max-w-[140px] text-right">
-                    {st.tagline}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <ul className="space-y-2">
+            {activeStones.map((s) => {
+              const v = content.stone(s);
+              return (
+                <li key={s.id} className="flex items-center gap-3 text-sm">
+                  <span className="w-3.5 h-3.5 rounded-full ring-1 ring-black/10 shrink-0" style={{ backgroundColor: s.hexColor }} />
+                  <span className="font-medium text-ink">{v.name}</span>
+                  <span className="text-ink-3 truncate">{v.tagline}</span>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="flex flex-wrap gap-1.5">
+            {intentions.map((i) => (
+              <Badge key={i} tone="gold">
+                ✦ {content.intention(i)}
+              </Badge>
+            ))}
           </div>
 
-          {/* Combined Intentions Synergies */}
-          <div className="p-3 bg-[#FAF5F0] rounded-2xl border border-[#E0B8B2]/50 text-xs text-[#5A453B] space-y-1.5">
-            <div className="flex items-center gap-1.5 font-bold text-[#7A584A]">
-              <Sparkles className="w-4 h-4 text-[#C79F5E]" />
-              <span>พลังงานประสานที่ได้รับ:</span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {combinedIntentions.map((int) => (
-                <span
-                  key={int}
-                  className="bg-white px-2 py-0.5 rounded-md border border-[#D8C7B8] text-[11px] font-semibold text-[#4E3C34]"
-                >
-                  ✦ {int}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Price & Add to Cart button */}
-          <div className="pt-2 border-t border-[#F0EAE4] space-y-3">
+          <div className="pt-5 border-t border-line space-y-3">
             <div className="flex items-baseline justify-between">
-              <div>
-                <span className="text-xs text-[#8C7063]">ราคาคราฟต์สุทธิ:</span>
-                <div className="text-2xl font-bold text-[#7A584A]">
-                  ฿{totalPrice.toLocaleString()}
+              <span className="text-sm text-ink-2">{t('craft.total')}</span>
+              <span className="text-3xl font-semibold text-ink tabular-nums">{price(total)}</span>
+            </div>
+            <Button size="lg" block onClick={handleAdd} variant={added ? 'secondary' : 'primary'}>
+              {added ? <Check className="w-5 h-5 text-success" /> : <ShoppingBag className="w-5 h-5" />}
+              {added ? t('craft.addedShort') : t('craft.addToCart')}
+            </Button>
+            {added && (
+              <button type="button" onClick={onOpenCart} className="w-full text-sm text-gold hover:underline underline-offset-4">
+                {t('pd.viewCart')} →
+              </button>
+            )}
+          </div>
+        </aside>
+
+        {/* Options */}
+        <div className="lg:col-span-7 space-y-6">
+          <Step n={1} title={t('craft.step1')}>
+            <div className="space-y-5">
+              <OptionGroup label={t('craft.beadSize')}>
+                <div className="grid sm:grid-cols-3 gap-2.5">
+                  {CRAFT_BEAD_SIZES.map((b) => (
+                    <OptionCard key={b.id} active={beadSize === b.id} onClick={() => setBeadSize(b.id)}>
+                      <span className="block font-semibold">{t(`craft.bead.${b.id}` as TKey)}</span>
+                      <span className="block text-xs opacity-75 mt-0.5">{t(`craft.beadDesc.${b.id}` as TKey)}</span>
+                      <span className="block text-xs font-semibold mt-1.5 text-gold">
+                        {t('craft.from', { price: price(b.basePrice) })}
+                      </span>
+                    </OptionCard>
+                  ))}
                 </div>
-              </div>
-              <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md font-semibold">
-                ฟรีค่าร้อย & จัดส่งฟรี
-              </span>
+              </OptionGroup>
+
+              <OptionGroup label={t('craft.wrist')}>
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                  {CRAFT_WRIST_SIZES.map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => setWristSize(w)}
+                      aria-pressed={wristSize === w}
+                      className={cx(
+                        'h-11 rounded-xl border text-sm font-medium transition-colors',
+                        wristSize === w ? 'bg-accent text-on-accent border-accent' : 'bg-surface border-line hover:border-gold'
+                      )}
+                    >
+                      {w.replace(' cm', '')}
+                    </button>
+                  ))}
+                </div>
+              </OptionGroup>
+
+              <OptionGroup label={t('craft.charm')}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {CRAFT_CHARMS.map((c) => (
+                    <OptionCard key={c} active={charm === c} onClick={() => setCharm(c)} compact>
+                      {t(`craft.charm.${c}` as TKey)}
+                    </OptionCard>
+                  ))}
+                </div>
+              </OptionGroup>
             </div>
+          </Step>
 
-            <button
-              type="button"
-              onClick={handleAddCustomToCart}
-              className={`w-full py-4 rounded-full font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md active:scale-95 ${
-                isAdded
-                  ? 'bg-emerald-700 text-white'
-                  : 'bg-[#4E3C34] hover:bg-[#382B24] text-[#FAF8F5]'
-              }`}
-            >
-              {isAdded ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>เพิ่มกำไลคราฟต์ลงตะกร้าแล้ว!</span>
-                </>
-              ) : (
-                <>
-                  <ShoppingBag className="w-4 h-4" />
-                  <span>ใส่ตะกร้า (฿{totalPrice.toLocaleString()})</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Right Column: Stone Selection & Options */}
-        <div className="lg:col-span-7 space-y-8">
-          {/* Step 1: Bead Size & Wrist Size */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EAE3DC] shadow-xs space-y-6">
-            <h3 className="font-serif text-xl font-bold text-[#2D2420] pb-2 border-b border-[#F0EAE4] flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-[#4E3C34] text-white text-xs font-bold flex items-center justify-center">
-                1
-              </span>
-              <span>เลือกขนาดเม็ดหินและรอบข้อมือ</span>
-            </h3>
-
-            {/* Bead Size Options */}
-            <div className="space-y-2.5">
-              <label className="text-sm font-bold uppercase tracking-wider text-[#8C7063]">
-                ขนาดเม็ดหิน (Bead Size)
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  { id: 'หินเจีย ขนาด 3 มิล', desc: 'มินิมอลระยิบระยับ (ตามชาร์ตร้าน)', priceHint: 'เริ่มต้น ฿490' },
-                  { id: '8mm Classic', desc: 'ขนาดลูกปัดมาตรฐาน ใส่สวยทุกวัน', priceHint: 'เริ่มต้น ฿1,890' },
-                  { id: '10mm Bold', desc: 'ลูกปัดใหญ่ พลังชัดเจน โดดเด่น', priceHint: 'เริ่มต้น ฿1,890' },
-                ].map((bs) => (
-                  <button
-                    key={bs.id}
-                    type="button"
-                    onClick={() => setBeadSize(bs.id)}
-                    className={`p-3.5 rounded-2xl text-left border transition-all ${
-                      beadSize === bs.id
-                        ? 'bg-[#4E3C34] text-white border-[#4E3C34] shadow-xs'
-                        : 'bg-[#FAF8F5] text-[#2D2420] border-[#EAE3DC] hover:border-[#C79F5E]'
-                    }`}
-                  >
-                    <div className="font-semibold text-base">{bs.id}</div>
-                    <div className={`text-xs mt-1 ${beadSize === bs.id ? 'text-white/80' : 'text-[#8C7063]'}`}>
-                      {bs.desc}
-                    </div>
-                    <div className={`text-xs font-bold mt-1.5 ${beadSize === bs.id ? 'text-[#E0B8B2]' : 'text-[#7A584A]'}`}>
-                      {bs.priceHint}
-                    </div>
-                  </button>
-                ))}
-              </div>
+          <Step
+            n={2}
+            title={t('craft.step2', { max: CRAFT_MAX_STONES })}
+            aside={<span className="text-sm text-ink-3">{t('craft.selected', { count: stoneIds.length, max: CRAFT_MAX_STONES })}</span>}
+          >
+            <div className="relative mb-4">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('stones.search')}
+                className="input pl-10"
+              />
             </div>
-
-            {/* Wrist Size Options */}
-            <div className="space-y-2.5">
-              <label className="text-sm font-bold uppercase tracking-wider text-[#8C7063]">
-                ขนาดรอบข้อมือ (Wrist Size: {wristSize})
-              </label>
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                {['14.5 cm', '15.0 cm', '15.5 cm', '16.0 cm', '16.5 cm', '17.0 cm', '17.5 cm', '18.0 cm'].map((ws) => (
-                  <button
-                    key={ws}
-                    type="button"
-                    onClick={() => setWristSize(ws)}
-                    className={`py-2.5 px-1.5 rounded-xl text-sm font-semibold border text-center transition-all ${
-                      wristSize === ws
-                        ? 'bg-[#7A584A] text-white border-[#7A584A] font-bold'
-                        : 'bg-[#FAF8F5] text-[#2D2420] border-[#EAE3DC] hover:border-[#C79F5E]'
-                    }`}
-                  >
-                    {ws}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Charm Selection */}
-            <div className="space-y-2.5">
-              <label className="text-sm font-bold uppercase tracking-wider text-[#8C7063]">
-                อะไหล่คั่นชาร์มเสริมบารมี (Spacer / Charm)
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {['14K Gold Charm', '18K White Gold', 'Rose Gold Charm', 'หินล้วน (ไม่ใส่อะไหล่)'].map((ch) => (
-                  <button
-                    key={ch}
-                    type="button"
-                    onClick={() => setCharm(ch)}
-                    className={`p-2.5 rounded-xl text-xs sm:text-sm font-semibold border text-center transition-all ${
-                      charm === ch
-                        ? 'bg-[#7A584A] text-white border-[#7A584A] font-bold'
-                        : 'bg-[#FAF8F5] text-[#2D2420] border-[#EAE3DC] hover:border-[#C79F5E]'
-                    }`}
-                  >
-                    {ch}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Step 2: Choose 1-4 Stones from 24 stones chart */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#EAE3DC] shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#F0EAE4]">
-              <h3 className="font-serif text-xl sm:text-2xl font-bold text-[#2D2420] flex items-center gap-2.5">
-                <span className="w-7 h-7 rounded-full bg-[#4E3C34] text-white text-xs font-bold flex items-center justify-center">
-                  2
-                </span>
-                <span>เลือกหินมงคล 1 - 4 ชนิด (จาก 24 ชนิด)</span>
-              </h3>
-              <span className="text-xs sm:text-sm text-[#8C7063] font-medium">
-                เลือกแล้ว: <strong className="text-[#7A584A]">{selectedStoneIds.length} / 4 ชนิด</strong>
-              </span>
-            </div>
-
-            {/* 24 Stones Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[520px] overflow-y-auto pr-1">
-              {LUCKY_STONES_CATALOG.map((stone) => {
-                const isSelected = selectedStoneIds.includes(stone.id);
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[560px] overflow-y-auto pr-1 -mr-1">
+              {visibleStones.map((s) => {
+                const v = content.stone(s);
+                const selected = stoneIds.includes(s.id);
                 return (
-                  <div
-                    key={stone.id}
-                    onClick={() => handleToggleStone(stone.id)}
-                    className={`p-3.5 rounded-2xl cursor-pointer border transition-all flex flex-col justify-between select-none relative ${
-                      isSelected
-                        ? 'bg-[#FAF5F0] border-[#7A584A] shadow-xs ring-1 ring-[#7A584A]'
-                        : 'bg-[#FAF8F5] border-[#EAE3DC] hover:border-[#C79F5E]'
-                    }`}
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleStone(s.id)}
+                    aria-pressed={selected}
+                    className={cx(
+                      'relative text-left rounded-2xl border p-3.5 transition-all',
+                      selected ? 'border-gold bg-gold-soft/60 ring-1 ring-gold' : 'border-line bg-surface hover:border-gold'
+                    )}
                   >
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span
-                          className="w-4.5 h-4.5 rounded-full border border-black/15 shadow-xs"
-                          style={{ backgroundColor: stone.hexColor }}
-                        />
-                        <div
-                          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                            isSelected
-                              ? 'bg-[#7A584A] text-white'
-                              : 'border border-[#D8C7B8]'
-                          }`}
-                        >
-                          {isSelected && '✓'}
-                        </div>
-                      </div>
-
-                      <h4 className="font-semibold text-sm sm:text-base text-[#2D2420] line-clamp-1">
-                        {stone.nameTh}
-                      </h4>
-                      <p className="text-xs text-[#8C7063] truncate">
-                        {stone.nameEn}
-                      </p>
-
-                      <p className="text-xs text-[#7A584A] mt-1.5 font-medium line-clamp-2">
-                        {stone.tagline}
-                      </p>
-                    </div>
-
-                    <div className="mt-2.5 pt-1.5 border-t border-[#F0EAE4] flex flex-wrap gap-1">
-                      {stone.category.slice(0, 2).map((cat) => (
-                        <span
-                          key={cat}
-                          className="text-[10px] sm:text-xs bg-white px-2 py-0.5 rounded text-[#8C7063] font-medium"
-                        >
-                          {cat}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                    <span className="flex items-center justify-between mb-2">
+                      <span className="w-5 h-5 rounded-full ring-1 ring-black/10" style={{ backgroundColor: s.hexColor }} />
+                      <span
+                        className={cx(
+                          'w-5 h-5 rounded-full flex items-center justify-center',
+                          selected ? 'bg-gold text-white' : 'border border-line-strong'
+                        )}
+                      >
+                        {selected && <Check className="w-3 h-3" />}
+                      </span>
+                    </span>
+                    <span className="block font-medium text-sm text-ink leading-snug">{v.name}</span>
+                    <span className="block text-[11px] text-ink-3">{v.subName}</span>
+                    <span className="block text-xs text-ink-2 mt-1.5 line-clamp-2">{v.tagline}</span>
+                  </button>
                 );
               })}
             </div>
-          </div>
+          </Step>
+
+          <p className="flex items-center gap-2 text-xs text-ink-3">
+            <Sparkles className="w-3.5 h-3.5 text-gold" />
+            {t('disclaimer.short')}
+          </p>
         </div>
       </div>
-    </div>
+    </Container>
   );
 };
+
+const Step: React.FC<{ n: number; title: string; aside?: React.ReactNode; children: React.ReactNode }> = ({
+  n,
+  title,
+  aside,
+  children,
+}) => (
+  <section className="card p-5 sm:p-7">
+    <div className="flex items-center justify-between gap-3 mb-5">
+      <h2 className="flex items-center gap-3 text-xl sm:text-2xl text-ink">
+        <span className="w-8 h-8 rounded-full bg-accent text-on-accent text-sm font-sans font-semibold flex items-center justify-center shrink-0">
+          {n}
+        </span>
+        {title}
+      </h2>
+      {aside}
+    </div>
+    {children}
+  </section>
+);
+
+const OptionGroup: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="space-y-2.5">
+    <p className="text-xs font-semibold uppercase tracking-wider text-ink-3">{label}</p>
+    {children}
+  </div>
+);
+
+const OptionCard: React.FC<{ active: boolean; onClick: () => void; compact?: boolean; children: React.ReactNode }> = ({
+  active,
+  onClick,
+  compact,
+  children,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={active}
+    className={cx(
+      'rounded-2xl border text-left transition-colors text-sm',
+      compact ? 'px-3 py-3 text-center font-medium' : 'p-4',
+      active ? 'bg-accent text-on-accent border-accent' : 'bg-surface border-line text-ink hover:border-gold'
+    )}
+  >
+    {children}
+  </button>
+);

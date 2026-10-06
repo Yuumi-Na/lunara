@@ -4,267 +4,220 @@
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 10: API (Fetch & Async/Await)]
  * [เนื้อหาที่เรียนรู้ - โมดูลที่ 9: CRUD (Create, Read, Update, Delete)]
  *
- * ฟังก์ชันเรียกใช้งาน REST API:
- * 1. GET    /api/products      -> fetchProducts()
- * 2. GET    /api/products/:id  -> fetchProductById()
- * 3. POST   /api/products      -> createProduct()
- * 4. PUT    /api/products/:id  -> updateProduct()
- * 5. DELETE /api/products/:id  -> deleteProduct()
- * 6. GET    /api/orders        -> fetchOrders()
- * 7. POST   /api/orders        -> createOrder()
- * 8. POST   /api/auth/google   -> loginWithGoogle()
+ * ทุกคำขอส่ง cookie session ไปด้วย (credentials: 'same-origin')
+ * และแนบ header X-Lunara-Client เพื่อป้องกัน CSRF
  * ============================================================================
  */
 
-import { Product, Order, AdminUser } from '../types';
-import { INITIAL_PRODUCTS } from '../data/products';
+import type {
+  AppUser,
+  CartItem,
+  CheckoutFormValues,
+  Order,
+  OrderStatus,
+  Product,
+  ProductFormValues,
+  Review,
+  ReviewEligibility,
+  ReviewFormValues,
+} from '../types';
 
-const STORAGE_KEY_PRODUCTS = 'lunara_products_v1';
-const STORAGE_KEY_ORDERS = 'lunara_orders_v1';
-const STORAGE_KEY_ADMIN = 'lunara_admin_session';
-
-// Helper: ดึงข้อมูลจาก LocalStorage ถ้าเซิร์ฟเวอร์ยังไม่มีการเชื่อมต่อ
-function getLocalProducts(): Product[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error('LocalStorage read error:', e);
+export class ApiError extends Error {
+  constructor(public status: number, public code: string, message: string, public productId?: string) {
+    super(message);
   }
-  return INITIAL_PRODUCTS;
 }
 
-function saveLocalProducts(products: Product[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(products));
-  } catch (e) {
-    console.error('LocalStorage save error:', e);
+async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set('X-Lunara-Client', '1');
+  if (init.body && typeof init.body === 'string') headers.set('Content-Type', 'application/json');
+
+  const res = await fetch(url, { ...init, headers, credentials: 'same-origin' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.success === false) {
+    throw new ApiError(res.status, json.code || 'ERROR', json.message || res.statusText, json.productId);
   }
+  return json as T;
+}
+
+const send = (method: string, body?: unknown): RequestInit => ({
+  method,
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+// ----------------------------------------------------------------------------
+// 0. CONFIG & AUTH
+// ----------------------------------------------------------------------------
+export async function fetchConfig(): Promise<{ googleClientId: string; passwordLogin: boolean }> {
+  return request('/api/config');
+}
+
+export async function loginWithGoogleCredential(credential: string): Promise<AppUser> {
+  const json = await request<{ user: AppUser }>('/api/auth/google', send('POST', { credential }));
+  return json.user;
+}
+
+/** Admin ล็อกอินด้วย Username / Password (ลูกค้าทั่วไปใช้ Google เท่านั้น) */
+export async function loginAdminWithPassword(username: string, password: string): Promise<AppUser> {
+  const json = await request<{ user: AppUser }>('/api/auth/admin-login', send('POST', { username, password }));
+  return json.user;
+}
+
+export async function fetchCurrentUser(): Promise<AppUser | null> {
+  const json = await request<{ user: AppUser | null }>('/api/auth/me');
+  return json.user;
+}
+
+export async function logout(): Promise<void> {
+  await request('/api/auth/logout', send('POST'));
 }
 
 // ----------------------------------------------------------------------------
 // 1. PRODUCTS CRUD API
 // ----------------------------------------------------------------------------
-
 export async function fetchProducts(): Promise<Product[]> {
-  try {
-    const res = await fetch('/api/products');
-    if (res.ok) {
-      const json = await res.json();
-      if (json.data && Array.isArray(json.data)) {
-        saveLocalProducts(json.data);
-        return json.data;
-      }
-    }
-  } catch (err) {
-    console.warn('API call failed, fallback to local storage:', err);
-  }
-  return getLocalProducts();
+  return (await request<{ data: Product[] }>('/api/products')).data;
 }
 
-export async function fetchProductById(id: string): Promise<Product | null> {
-  try {
-    const res = await fetch(`/api/products/${id}`);
-    if (res.ok) {
-      const json = await res.json();
-      return json.data;
-    }
-  } catch (err) {
-    console.warn('API call failed, fallback to local search:', err);
-  }
-  const all = getLocalProducts();
-  return all.find((p) => p.id === id) || null;
+export async function createProduct(values: ProductFormValues): Promise<Product> {
+  return (await request<{ data: Product }>('/api/products', send('POST', values))).data;
 }
 
-export async function createProduct(productData: Omit<Product, 'id'>): Promise<Product> {
-  const newProduct: Product = {
-    ...productData,
-    id: `prod-${Date.now()}`,
-    rating: 5.0,
-    reviewCount: 0,
-  };
-
-  try {
-    const res = await fetch('/api/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newProduct),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      const created = json.data;
-      // Sync local storage
-      const current = getLocalProducts();
-      saveLocalProducts([created, ...current]);
-      return created;
-    }
-  } catch (err) {
-    console.warn('API POST failed, fallback to local save:', err);
-  }
-
-  // Fallback
-  const current = getLocalProducts();
-  const updated = [newProduct, ...current];
-  saveLocalProducts(updated);
-  return newProduct;
+export async function updateProduct(id: string, values: ProductFormValues): Promise<Product> {
+  return (await request<{ data: Product }>(`/api/products/${id}`, send('PUT', values))).data;
 }
 
-export async function updateProduct(id: string, productData: Partial<Product>): Promise<Product> {
-  try {
-    const res = await fetch(`/api/products/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(productData),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      const updated = json.data;
-      // Sync local storage
-      const current = getLocalProducts();
-      const index = current.findIndex((p) => p.id === id);
-      if (index !== -1) {
-        current[index] = updated;
-        saveLocalProducts(current);
-      }
-      return updated;
-    }
-  } catch (err) {
-    console.warn('API PUT failed, fallback to local update:', err);
-  }
-
-  // Fallback
-  const current = getLocalProducts();
-  const index = current.findIndex((p) => p.id === id);
-  if (index !== -1) {
-    current[index] = { ...current[index], ...productData };
-    saveLocalProducts(current);
-    return current[index];
-  }
-  throw new Error('ไม่พบสินค้าที่ต้องการแก้ไข');
+export async function deleteProduct(id: string): Promise<void> {
+  await request(`/api/products/${id}`, send('DELETE'));
 }
 
-export async function deleteProduct(id: string): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/products/${id}`, {
-      method: 'DELETE',
-    });
-    if (res.ok) {
-      const current = getLocalProducts();
-      saveLocalProducts(current.filter((p) => p.id !== id));
-      return true;
-    }
-  } catch (err) {
-    console.warn('API DELETE failed, fallback to local delete:', err);
-  }
+// ----------------------------------------------------------------------------
+// 1.1 REVIEWS
+// ----------------------------------------------------------------------------
+export interface ProductReviews {
+  reviews: Review[];
+  me: { eligibility: ReviewEligibility; review: Review | null };
+}
 
-  // Fallback
-  const current = getLocalProducts();
-  saveLocalProducts(current.filter((p) => p.id !== id));
-  return true;
+export async function fetchProductReviews(productId: string): Promise<ProductReviews> {
+  return (await request<{ data: ProductReviews }>('/api/products/' + encodeURIComponent(productId) + '/reviews')).data;
+}
+
+export async function submitReview(productId: string, values: ReviewFormValues): Promise<Review> {
+  return (await request<{ data: Review }>('/api/products/' + encodeURIComponent(productId) + '/reviews', send('POST', values))).data;
+}
+
+export async function deleteReview(id: string): Promise<void> {
+  await request('/api/reviews/' + encodeURIComponent(id), send('DELETE'));
+}
+
+export type FeaturedReview = Review & { productName: string; productEnglishName?: string };
+
+export async function fetchFeaturedReviews(): Promise<{ reviews: FeaturedReview[]; stats: { rating: number; count: number } }> {
+  return (await request<{ data: { reviews: FeaturedReview[]; stats: { rating: number; count: number } } }>('/api/reviews/featured')).data;
 }
 
 // ----------------------------------------------------------------------------
 // 2. ORDERS API
 // ----------------------------------------------------------------------------
-
-export async function fetchOrders(): Promise<Order[]> {
-  try {
-    const res = await fetch('/api/orders');
-    if (res.ok) {
-      const json = await res.json();
-      if (json.data && Array.isArray(json.data)) {
-        localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(json.data));
-        return json.data;
-      }
-    }
-  } catch (err) {
-    console.warn('API GET orders failed, fallback:', err);
-  }
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_ORDERS);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error(e);
-  }
-  return [];
+export async function fetchMyOrders(): Promise<Order[]> {
+  return (await request<{ data: Order[] }>('/api/orders')).data;
 }
 
-export async function createOrder(orderData: Omit<Order, 'id' | 'createdAt'>): Promise<Order> {
-  const newOrder: Order = {
-    ...orderData,
-    id: `ORD-${Math.floor(10000 + Math.random() * 90000)}`,
-    createdAt: new Date().toISOString(),
-  };
+export async function fetchAllOrders(): Promise<Order[]> {
+  return (await request<{ data: Order[] }>('/api/orders?scope=all')).data;
+}
 
-  try {
-    const res = await fetch('/api/orders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newOrder),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      const saved = json.data;
-      const orders = await fetchOrders();
-      localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify([saved, ...orders.filter(o => o.id !== saved.id)]));
-      return saved;
-    }
-  } catch (err) {
-    console.warn('API POST orders failed, fallback:', err);
-  }
+export async function createOrder(shipping: CheckoutFormValues, cart: CartItem[]): Promise<Order> {
+  const items = cart.map((item) => ({
+    productId: item.product.id,
+    quantity: item.quantity,
+    selectedSize: item.selectedSize,
+    craft: item.product.craft,
+  }));
+  return (await request<{ data: Order }>('/api/orders', send('POST', { ...shipping, items }))).data;
+}
 
-  // Fallback
-  const orders = await fetchOrders();
-  const updatedOrders = [newOrder, ...orders];
-  localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(updatedOrders));
-  return newOrder;
+export async function updateOrderStatus(id: string, status: OrderStatus): Promise<Order> {
+  return (await request<{ data: Order }>(`/api/orders/${id}/status`, send('PATCH', { status }))).data;
 }
 
 // ----------------------------------------------------------------------------
-// 3. GOOGLE OAUTH CLIENT HELPER
+// 3. IMAGE FOLDER (โฟลเดอร์ img/ บนเซิร์ฟเวอร์)
 // ----------------------------------------------------------------------------
-
-export async function loginWithGoogleOAuth(mockData?: Partial<AdminUser>): Promise<AdminUser> {
-  try {
-    const res = await fetch('/api/auth/google', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mockData || {}),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.user) {
-        localStorage.setItem(STORAGE_KEY_ADMIN, JSON.stringify(json.user));
-        return json.user;
-      }
-    }
-  } catch (e) {
-    console.warn('Google login API failed, fallback:', e);
-  }
-
-  const defaultAdmin: AdminUser = {
-    id: 'admin-google-1',
-    name: mockData?.name || 'อาจารย์ / ผู้ตรวจโปรเจกต์ (Google Auth)',
-    email: mockData?.email || 'natpapattep@gmail.com',
-    avatar: mockData?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-    role: 'admin',
-  };
-
-  localStorage.setItem(STORAGE_KEY_ADMIN, JSON.stringify(defaultAdmin));
-  return defaultAdmin;
+export interface MediaFile {
+  name: string;
+  path: string;
+  url: string;
+  size: number;
+  mime: string;
+  modifiedAt?: string;
+  usedBy?: number;
 }
 
-export function getCurrentAdmin(): AdminUser | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_ADMIN);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error(e);
-  }
-  return null;
+export interface MediaFolder {
+  name: string;
+  path: string;
+  count: number;
 }
 
-export function logoutAdmin() {
-  localStorage.removeItem(STORAGE_KEY_ADMIN);
+export interface MediaListing {
+  dir: string;
+  folders: MediaFolder[];
+  files: MediaFile[];
+}
+
+export async function fetchMedia(dir = ''): Promise<MediaListing> {
+  return (await request<{ data: MediaListing }>(`/api/media?dir=${encodeURIComponent(dir)}`)).data;
+}
+
+export async function uploadImage(file: File, dir = ''): Promise<MediaFile> {
+  const json = await request<{ data: MediaFile }>(`/api/media/upload?dir=${encodeURIComponent(dir)}`, {
+    method: 'POST',
+    body: file,
+    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+  });
+  return json.data;
+}
+
+export async function createFolder(dir: string, name: string): Promise<MediaFolder> {
+  return (await request<{ data: MediaFolder }>('/api/media/folder', send('POST', { dir, name }))).data;
+}
+
+export async function deleteMedia(path: string): Promise<void> {
+  await request(`/api/media?path=${encodeURIComponent(path)}`, send('DELETE'));
+}
+
+// ----------------------------------------------------------------------------
+// 4. ADMIN
+// ----------------------------------------------------------------------------
+export interface AdminStats {
+  revenue: number;
+  orderCount: number;
+  pendingCount: number;
+  productCount: number;
+  lowStock: { id: string; name: string; stock: number }[];
+  customerCount: number;
+  unansweredReviews: number;
+  imageCount: number;
+}
+
+export async function fetchAdminStats(): Promise<AdminStats> {
+  return (await request<{ data: AdminStats }>('/api/admin/stats')).data;
+}
+
+export type AdminReview = Review & { productName: string | null; productImage: string | null };
+
+export async function fetchAdminReviews(): Promise<AdminReview[]> {
+  return (await request<{ data: AdminReview[] }>('/api/admin/reviews')).data;
+}
+
+/** ตอบกลับ ({ reply: 'ข้อความ' }), ลบคำตอบ ({ reply: null }), ซ่อน/แสดง ({ hidden }) */
+export async function updateAdminReview(id: string, changes: { reply?: string | null; hidden?: boolean }): Promise<Review> {
+  return (await request<{ data: Review }>('/api/admin/reviews/' + encodeURIComponent(id), send('PATCH', changes))).data;
+}
+
+export async function fetchCustomers(): Promise<(AppUser & { orderCount: number })[]> {
+  return (await request<{ data: (AppUser & { orderCount: number })[] }>('/api/admin/users')).data;
 }

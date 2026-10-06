@@ -24,9 +24,9 @@ export const INITIAL_PRODUCTS: Product[] = [
     tagline: 'หินแห่งความรักแท้ เสน่ห์เมตตามหานิยม และการเยียวยาหัวใจ',
     price: 1890,
     originalPrice: 2290,
-    image: 'https://images.unsplash.com/photo-1611591475819-797de0d7269e?auto=format&fit=crop&w=900&q=80',
+    image: '/bracelet-placeholder.svg',
     images: [
-      'https://images.unsplash.com/photo-1611591475819-797de0d7269e?auto=format&fit=crop&w=900&q=80',
+      '/bracelet-placeholder.svg',
       'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=900&q=80',
     ],
     intentions: ['Love', 'Calm', 'Confidence'],
@@ -47,8 +47,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'แนะนำให้ชำระล้างพลังงานด้วยแสงจันทร์คืนวันเพ็ญ (Full Moon Cleansing) หรือวางบนคลัสเตอร์เคลียร์ควอตซ์ หลีกเลี่ยงการโดนน้ำหอมและแอลกอฮอล์โดยตรง',
     isBestSeller: true,
     isNewArrival: false,
-    rating: 4.95,
-    reviewCount: 38,
   },
   {
     id: 'prod-amethyst',
@@ -78,8 +76,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'ล้างผ่านควันเสจบริสุทธิ์ หรือใช้เสียงขันธิเบต (Singing Bowl) ชำระล้าง ควรเลี่ยงการตากแดดจัดเป็นเวลานานเพราะอาจทำให้สีม่วงจางลง',
     isBestSeller: true,
     isNewArrival: false,
-    rating: 4.9,
-    reviewCount: 29,
   },
   {
     id: 'prod-citrine',
@@ -109,8 +105,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'อาบแสงแดดยามเช้า (07:00 - 08:30 น.) ประมาณ 15 นาที เพื่อกระตุ้นพลังงานแห่งดวงอาทิตย์ หรือล้างผ่านน้ำแร่ธรรมชาติ',
     isBestSeller: true,
     isNewArrival: false,
-    rating: 5.0,
-    reviewCount: 42,
   },
   {
     id: 'prod-tigers-eye',
@@ -140,8 +134,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'ฝังลงในดินบริสุทธิ์ข้ามคืนเพื่อคืนพลังดิน หรือล้างด้วยน้ำสะอาดและซับให้แห้งสนิท',
     isBestSeller: false,
     isNewArrival: true,
-    rating: 4.88,
-    reviewCount: 33,
   },
   {
     id: 'prod-clear-quartz',
@@ -171,8 +163,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'ชำระล้างผ่านน้ำไหลตามธรรมชาติ หรือนำไปวางตากแสงจันทร์เพื่อรีชาร์จพลังงานเต็มพิกัด',
     isBestSeller: false,
     isNewArrival: true,
-    rating: 4.9,
-    reviewCount: 22,
   },
   {
     id: 'prod-black-tourmaline',
@@ -202,8 +192,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'ใช้เกลือหิมาลายันบริสุทธิ์รองด้านล่าง หรือรมควันพาโลซานโต (Palo Santo) เพื่อชำระล้างพลังงานที่ดูดซับไว้',
     isBestSeller: false,
     isNewArrival: false,
-    rating: 4.92,
-    reviewCount: 27,
   },
   {
     id: 'prod-elysian-harmony',
@@ -234,8 +222,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'ชำระล้างด้วยแสงจันทร์เต็มดวง หรือเสียงดนตรีคลื่นความถี่ 528Hz เพื่อปรับสมดุลทั้งสองหินพร้อมกัน',
     isBestSeller: true,
     isNewArrival: false,
-    rating: 5.0,
-    reviewCount: 54,
   },
   {
     id: 'prod-abundance-crown',
@@ -266,8 +252,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'อาบแสงแดดยามเช้า 15 นาที หรือล้างผ่านน้ำแร่บริสุทธิ์เพื่อกระตุ้นพลังงานแห่งการเติบโต',
     isBestSeller: true,
     isNewArrival: false,
-    rating: 4.98,
-    reviewCount: 46,
   },
   {
     id: 'prod-trinity-synergy',
@@ -298,8 +282,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'ชำระล้างด้วยเสียงระฆังธิเบต หรือแสงจันทร์คืนเพ็ญ เพื่อปรับจูนคลื่นพลังงานของหินทั้ง 3 ชนิดให้สอดคล้องกัน',
     isBestSeller: true,
     isNewArrival: false,
-    rating: 5.0,
-    reviewCount: 61,
   },
   {
     id: 'prod-3mm-sweet-amore',
@@ -310,7 +292,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     tagline: 'หินเจีย 3 มิล ละมุนตา เสน่ห์เมตตามหานิยม ความรักสมหวัง',
     price: 450,
     originalPrice: 590,
-    image: 'https://images.unsplash.com/photo-1611591475819-797de0d7269e?auto=format&fit=crop&w=900&q=80',
+    image: '/bracelet-placeholder.svg',
     intentions: ['Love', 'Calm'],
     colors: ['Pink', 'White'],
     style: 'Cute',
@@ -328,8 +310,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     careRitual: 'หลีกเลี่ยงการกระแทกแรงๆ ล้างผ่านน้ำสะอาดและซับให้แห้ง',
     isBestSeller: true,
     isNewArrival: false,
-    rating: 4.9,
-    reviewCount: 38,
   },
   {
     id: 'prod-3mm-pure-serenity',
@@ -357,8 +337,6 @@ export const INITIAL_PRODUCTS: Product[] = [
     },
     isBestSeller: true,
     isNewArrival: false,
-    rating: 4.75,
-    reviewCount: 51,
   },
   {
     id: 'prod-3mm-verdant-luck',
@@ -386,7 +364,5 @@ export const INITIAL_PRODUCTS: Product[] = [
     },
     isBestSeller: false,
     isNewArrival: true,
-    rating: 4.9,
-    reviewCount: 27,
   },
 ];

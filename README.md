@@ -1,20 +1,48 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# LUNARA — กำไลหินมงคล
 
-# Run and deploy your AI Studio app
+ร้านกำไลหินมงคล (React + Vite + Express) พร้อม Google Sign-In, หลังร้าน Admin, คลังรูปภาพในฐานข้อมูล SQLite, ภาษาไทย / English และธีมกลางวัน / กลางคืน
 
-This contains everything you need to run your app locally.
+## เริ่มใช้งาน
 
-View your app in AI Studio: https://ai.studio/apps/7b1fe73e-ec9f-45d8-8953-2fc9978aefc3
+**ต้องมี:** Node.js 22.5 ขึ้นไป (ใช้ SQLite ที่มากับ Node ไม่ต้องติดตั้งฐานข้อมูลเพิ่ม)
 
-## Run Locally
+1. ติดตั้งแพ็กเกจ: `npm install`
+2. คัดลอก `.env.example` เป็น `.env.local` แล้วใส่ `GOOGLE_CLIENT_ID`, `ADMIN_EMAILS`, `SESSION_SECRET`
+3. ที่ [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials) เปิด OAuth Client ID ตัวนั้น
+   แล้วเพิ่ม **Authorized JavaScript origins**: `http://localhost:3000`
+4. รัน: `npm run dev` แล้วเปิด http://localhost:3000
 
-**Prerequisites:**  Node.js
+## สิทธิ์ผู้ใช้
 
+| ผู้ใช้ | ทำอะไรได้ |
+| --- | --- |
+| ยังไม่ล็อกอิน | ดูสินค้า, ใส่ตะกร้า, Wishlist, คราฟต์กำไล |
+| ลูกค้า (ล็อกอิน Google) | ชำระเงิน, ดูคำสั่งซื้อของตัวเองที่ `/account` |
+| Admin (อีเมลใน `ADMIN_EMAILS` หรือ Username / Password) | หลังร้าน `/admin`: สินค้า, คำสั่งซื้อ, คลังรูปภาพ, ลูกค้า |
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+เซิร์ฟเวอร์ตรวจ Google ID Token จริงทุกครั้งที่ล็อกอิน และตรวจสิทธิ์ทุก API ที่สำคัญ
+
+**Admin แบบ Username / Password** (ใช้ได้ที่หน้า `/admin` เท่านั้น ลูกค้าทั่วไปใช้ Google):
+ตั้งค่าหรือเปลี่ยนรหัสผ่านด้วย `npm run admin:password -- <username> <password>` (บันทึกเป็น hash ใน `.env.local`) แล้วรีสตาร์ทเซิร์ฟเวอร์ — ใส่รหัสผิด 5 ครั้งจะล็อก 15 นาที
+
+## รีวิว
+
+- รีวิวได้เฉพาะลูกค้าที่**สั่งซื้อสินค้านั้นจริง** (คำสั่งซื้อที่ไม่ถูกยกเลิก) → ป้าย “ซื้อจริง”
+- Admin รีวิวเพื่อทดสอบได้ → ป้าย “Admin ทดสอบ”
+- ชื่อ/รูปผู้รีวิวล็อกตามบัญชีที่ล็อกอิน แก้เองไม่ได้ · 1 บัญชีรีวิวได้ 1 ครั้งต่อสินค้า (ส่งใหม่ = แก้ไข)
+- คะแนนดาวและจำนวนรีวิวคำนวณจากรีวิวจริงเท่านั้น หน้าแรกแสดงรีวิวล่าสุดเมื่อมีรีวิวแล้ว
+
+**Admin แบบ Username / Password** (ใช้ได้ที่หน้า  เท่านั้น ลูกค้าทั่วไปใช้ Google):
+ตั้งค่าหรือเปลี่ยนรหัสผ่านด้วย  (บันทึกเป็น hash ใน ) แล้วรีสตาร์ทเซิร์ฟเวอร์ — ใส่รหัสผิด 5 ครั้งจะล็อก 15 นาที
+
+## รีวิว
+
+- รีวิวได้เฉพาะลูกค้าที่**สั่งซื้อสินค้านั้นจริง** (คำสั่งซื้อที่ไม่ถูกยกเลิก) → ป้าย “ซื้อจริง”
+- Admin รีวิวเพื่อทดสอบได้ → ป้าย “Admin ทดสอบ”
+- ชื่อ/รูปผู้รีวิวล็อกตามบัญชีที่ล็อกอิน แก้เองไม่ได้ · 1 บัญชีรีวิวได้ 1 ครั้งต่อสินค้า (ส่งใหม่ = แก้ไข)
+- คะแนนดาวและจำนวนรีวิวคำนวณจากรีวิวจริงเท่านั้น หน้าแรกแสดงรีวิวล่าสุดเมื่อมีรีวิวแล้ว
+
+## ข้อมูล
+
+- ฐานข้อมูล (สินค้า / คำสั่งซื้อ / ผู้ใช้): `storage/lunara.db` สร้างอัตโนมัติพร้อมสินค้าตัวอย่าง — ลบโฟลเดอร์ `storage/` เพื่อเริ่มใหม่
+- รูปภาพ: โฟลเดอร์ `img/` (มีโฟลเดอร์ย่อยได้) แสดงที่ `/img/...` — วางไฟล์ JPG / PNG / WEBP เองในโฟลเดอร์นี้ หรืออัปโหลดจากหน้า Admin → คลังรูปภาพ ก็ได้

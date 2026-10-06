@@ -1,21 +1,38 @@
 <!doctype html>
-<html lang="th">
+<html lang="th" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LUNARA - กำไลหินมงคล</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>LUNARA — Lucky Stone Bracelets</title>
     <meta name="description" content="ร้านกำไลหินมงคล LUNARA สไตล์ Minimal Luxury เสริมดวง ความรัก การเงิน การงาน สุขภาพ พร้อมระบบค้นหากำไลหินที่เหมาะกับคุณ" />
-    <meta property="og:title" content="LUNARA - กำไลหินมงคล" />
+    <meta property="og:title" content="LUNARA — Lucky Stone Bracelets" />
     <meta property="og:description" content="ร้านกำไลหินมงคล LUNARA สไตล์ Minimal Luxury เสริมดวง ความรัก การเงิน การงาน สุขภาพ พร้อมระบบค้นหากำไลหินที่เหมาะกับคุณ" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Prompt:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <meta name="theme-color" content="#faf7f2" />
+    <script>
+      // ตั้งค่าธีมและภาษาก่อนหน้าเว็บแสดงผล เพื่อไม่ให้หน้าจอกะพริบ
+      (function () {
+        try {
+          var theme = localStorage.getItem('lunara_theme');
+          if (theme !== 'light' && theme !== 'dark') {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.dataset.theme = theme;
+          var lang = localStorage.getItem('lunara_lang');
+          if (lang) document.documentElement.lang = lang;
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Noto+Serif+Thai:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
-  <body class="bg-[#FAF8F5] text-[#2D2420] antialiased selection:bg-[#E8D3CB] selection:text-[#3B2923]">
+  <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/main.tsx"></script>
   </body>
 </html>
-
