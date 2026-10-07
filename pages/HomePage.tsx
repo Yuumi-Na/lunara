@@ -113,7 +113,7 @@ export const HomePage: React.FC<HomePageProps> = ({ products,
               <div className="relative mx-auto max-w-md lg:max-w-none">
                 <div className="aspect-[4/5] sm:aspect-[5/4] lg:aspect-[4/5] rounded-[2rem] overflow-hidden shadow-2xl ring-1 ring-line">
                   <img
-                    src="https://images.unsplash.com/photo-1617038220319-276d3cfab638?auto=format&fit=crop&w=1100&q=80"
+                    src="/home-hero.jpg"
                     alt="LUNARA handcrafted crystal bracelets"
                     className="w-full h-full object-cover"
                   />
